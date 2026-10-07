@@ -18,7 +18,7 @@ This is an unofficial fan project, not affiliated with Nintendo or Harbour Maste
 
 ## 💬 Community
 
-Join [Epic's Discord community](https://discord.gg/qwcTTDqbhu) to discuss the
+Join [My Discord community](https://discord.gg/qwcTTDqbhu) to discuss the
 port and share feedback. When reporting an issue, include your console model,
 game version, relevant settings and the steps needed to reproduce it.
 
@@ -61,16 +61,15 @@ Local multiplayer is not available.
 | Control | Manual racing |
 | --- | --- |
 | Circle Pad | Steer; up/down selects item throw direction |
-| A | Accelerate; held A carries through pause → Continue |
-| B | Brake; hold through a stop to reverse with modern logic |
+| A | Accelerate |
+| B | Brake and then reverse |
 | R | Hop / drift |
 | L or Y | Use item |
-| X | Hold to look behind |
+| X | look behind |
 | SELECT | Switch camera distance |
 | START | Pause / continue |
 | C-Stick | Hold for configured Turbo Speed |
 | ZL | Toggle configured Turbo Speed on/off |
-| Touch | Lower-screen menus and settings |
 
 Press L on Game Select to open **Display**, **Gameplay** and **Developer** settings.
 The in-race menu also has a **Pause** page for continue/quit. HUD layout,
@@ -160,12 +159,9 @@ See [BUILDING.md](BUILDING.md) for setup and build instructions,
 
 ## 🫡 Credits
 
-- **Epic** — continued 3DS runtime, resources, rendering, audio, UI/input and gameplay fixes.
 - **EstebanPdN** — original [Nintendo 3DS port](https://github.com/EstebanPdN/mario-kart-64-3ds).
 - **Harbour Masters and contributors** — [SpaghettiKart](https://github.com/HarbourMasters/SpaghettiKart), libultraship and Torch.
 - **N64 decompilation and 3DS homebrew communities.**
-- **SM64 3DS Port Ultimate** — techniques studied from the [related project](https://github.com/Epic0522/Super-Mario-64-3ds-port---Ultimate).
-- **Codex** — assisted implementation and verification.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for source origins and
 third-party license notices.
