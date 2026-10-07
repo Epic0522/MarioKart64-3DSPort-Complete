@@ -84,11 +84,19 @@ game launch starts with Turbo off.
 | Fresh setting | Default |
 | --- | --- |
 | HUD layout | Clean |
+| HUD meters | Off |
 | Render distance | Low |
 | Modern logic | On |
 | Frame limiter | Old 3DS: On / New 3DS: Off |
 | ZR debug | Off |
 | Logging | Off |
+
+In **Clean**, manual racing shows standings through the lower-screen portrait
+columns by default, without a separate `1st / 2nd / ...` place indicator.
+Select **Display → HUD METERS → POSITION/LAP** to show your place at the
+bottom-left of the upper screen and lap count at the top-right. GP/VS AUTO
+shows the upper-screen place indicator automatically. The separate place
+indicator is never displayed on the lower screen.
 
 Saved settings take precedence. Unsupported HUD meter combinations appear red.
 Time Trials hide rank; title demos hide the upper HUD. Modern logic changes take
