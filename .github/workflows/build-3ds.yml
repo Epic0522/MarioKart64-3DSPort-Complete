@@ -1,0 +1,56 @@
+name: Build 3DS
+
+on:
+  push:
+    branches: [main, 'release/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Nintendo 3DS packages
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm:latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install host build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends cmake make pkg-config python3 perl patch xz-utils
+
+      - name: Build 3DSX and CIA when local packaging tools are present
+        run: ./platform/3ds/build.sh
+
+      - name: Verify outputs and public boundary
+        run: |
+          VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" diff --check
+          python3 platform/3ds/check_release_source.py
+          test -f "build-3ds/game/mk64-3ds-v${VERSION}.3dsx"
+          test -f "build-3ds/game/mk64-3ds-v${VERSION}.sha256"
+          (cd build-3ds/game && sha256sum -c "mk64-3ds-v${VERSION}.sha256")
+          if [ -f "build-3ds/game/mk64-3ds-v${VERSION}.cia" ]; then
+            echo "CIA package was built."
+          else
+            echo "CIA packaging was skipped because makerom is unavailable in CI."
+          fi
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: mk64-3ds-packages
+          if-no-files-found: error
+          path: |
+            build-3ds/game/mk64-3ds-v*.3dsx
+            build-3ds/game/mk64-3ds-v*.cia
+            build-3ds/game/mk64-3ds-v*.sha256

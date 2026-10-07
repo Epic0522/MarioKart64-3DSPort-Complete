@@ -1,0 +1,4 @@
+[submodule "spaghettikart"]
+	path = third_party/SpaghettiKart
+	url = https://github.com/HarbourMasters/SpaghettiKart.git
+	shallow = true

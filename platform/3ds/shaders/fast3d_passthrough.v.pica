@@ -1,0 +1,84 @@
+; Fast3D supplies homogeneous clip-space positions, normalized texture
+; coordinates, and a single varying combiner input. Preserve w so PICA200 does
+; the perspective divide and perspective-correct texture interpolation.
+
+.fvec projection[4]
+.fvec distanceFog[1]
+.fvec textureScale, textureClamp
+.bool nativeGeometryEnabled
+.bool nativeLightingEnabled
+.fvec nativeMatrix[4], nativeAspect
+.fvec nativeLightDirection, nativeLightDiffuse, nativeLightAmbient
+
+.constf shaderConstants(1.0, 0.0, 0.00392156862745, 0.0)
+.constf lightingConstants(128.0, 0.0078740157480315, 255.0, 0.0)
+
+.out outpos position
+.out outtc0 texcoord0
+.out outtc1 texcoord1
+.out outclr color
+.out outtc2 texcoord2
+
+.in inpos v0
+.in intex0 v1
+.in intex1 v2
+.in incolor v3
+.in indepth v4
+
+.proc main
+    mov r4, inpos
+    ifu nativeGeometryEnabled
+        ; Packed w retains the exact CPU depth used by clipping/LOD/fog.
+        ; Position input to the captured object matrix is homogeneous xyz1.
+        mov r5.xyz, inpos
+        mov r5.w, shaderConstants.x
+        dp4 r4.x, nativeMatrix[0], r5
+        dp4 r4.y, nativeMatrix[1], r5
+        ; Keep exact CPU W paired with CPU-converted depth. Only X/Y are
+        ; deferred; recomputing Z/W on float24 loses far-surface separation.
+        mul r4.x, nativeAspect.x, r4.x
+    .end
+    dp4 r0.x, projection[0], r4
+    dp4 r0.y, projection[1], r4
+    mov r0.z, indepth.x
+    dp4 r0.w, projection[3], r4
+
+    ; Let hardware CLIP at the near/far planes. Clamping each vertex instead
+    ; folds out-of-frustum geometry onto the front/back depth planes without
+    ; trimming its screen footprint (large bridge/water/tree polygons).
+    ; Conversion ran on ARM11; triangles crossing w=0 are clipped on the CPU.
+    mov outpos, r0
+    ; Texture dimensions and tile clamps are draw state, not CPU vertex work.
+    min r6.xy, textureClamp, intex0
+    min r6.zw, textureClamp, intex1.xyxy
+    mul r6, textureScale, r6
+    ; Write complete output vectors, including finite z/w padding, as the
+    ; original passthrough did. Keep all UV clamp/scale arithmetic on PICA.
+    mov r7, shaderConstants.yyyx
+    mov r7.xy, r6
+    mov outtc0, r7
+    mov r7.xy, r6.zwzw
+    mov outtc1, r7
+    ; Perspective w is eye-space distance in the game cameras. Generate a
+    ; third texture coordinate without increasing the packed vertex size.
+    mov r1, shaderConstants.yyyy
+    mul r1.x, distanceFog[0].x, inpos.w
+    add r1.x, distanceFog[0].y, r1.x
+    mov r1.y, distanceFog[0].z
+    mov outtc2, r1
+    mov r2, incolor
+    ifu nativeLightingEnabled
+        add r3.xyz, -lightingConstants.xxx, r2.xyz
+        mul r3.xyz, nativeLightDirection.xyz, r3.xyz
+        add r3.x, r3.x, r3.y
+        add r3.x, r3.x, r3.z
+        mul r3.x, lightingConstants.y, r3.x
+        max r3.x, lightingConstants.w, r3.x
+        mul r3.xyz, nativeLightDiffuse.xyz, r3.xxx
+        add r3.xyz, nativeLightAmbient.xyz, r3.xyz
+        flr r3.xyz, r3.xyz
+        min r2.xyz, lightingConstants.zzz, r3.xyz
+    .end
+    mul outclr, shaderConstants.zzzz, r2
+    end
+.end

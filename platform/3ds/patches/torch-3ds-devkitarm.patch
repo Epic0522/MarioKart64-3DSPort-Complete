@@ -1,0 +1,1874 @@
+diff --git a/lib/binarytools/BinaryWriter.cpp b/lib/binarytools/BinaryWriter.cpp
+index 83c0b4c..4dcab60 100644
+--- a/lib/binarytools/BinaryWriter.cpp
++++ b/lib/binarytools/BinaryWriter.cpp
+@@ -62,6 +62,16 @@ void LUS::BinaryWriter::Write(uint16_t value) {
+     mStream->Write((char*)&value, sizeof(uint16_t));
+ }
+ 
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++void LUS::BinaryWriter::Write(int value) {
++    Write(static_cast<int32_t>(value));
++}
++
++void LUS::BinaryWriter::Write(unsigned int value) {
++    Write(static_cast<uint32_t>(value));
++}
++#endif
++
+ void LUS::BinaryWriter::Write(int32_t value) {
+     if (mEndianness != Torch::Endianness::Native) {
+         value = BSWAP32(value);
+@@ -135,7 +145,7 @@ void LUS::BinaryWriter::Write(double value) {
+ 
+ void LUS::BinaryWriter::Write(const std::string& str, bool writeLength) {
+     if(writeLength){
+-        int strLen = str.size();
++        int32_t strLen = static_cast<int32_t>(str.size());
+         Write(strLen);
+     }
+     for (char c : str) {
+@@ -158,4 +168,4 @@ std::vector<char> LUS::BinaryWriter::ToVector() {
+ void LUS::BinaryWriter::Finish(std::ostream& output) {
+     auto data = mStream->ToVector();
+     output.write(data.data(), data.size());
+-}
+\ No newline at end of file
++}
+diff --git a/lib/binarytools/BinaryWriter.h b/lib/binarytools/BinaryWriter.h
+index 089a7f5..af2dbea 100644
+--- a/lib/binarytools/BinaryWriter.h
++++ b/lib/binarytools/BinaryWriter.h
+@@ -26,6 +26,10 @@ class BinaryWriter {
+     void Write(uint8_t value);
+     void Write(int16_t value);
+     void Write(uint16_t value);
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    void Write(int value);
++    void Write(unsigned int value);
++#endif
+     void Write(int32_t value);
+     void Write(int32_t valueA, int32_t valueB);
+     void Write(uint32_t value);
+diff --git a/lib/binarytools/MemoryStream.cpp b/lib/binarytools/MemoryStream.cpp
+index d94b7d3..fa5d10c 100644
+--- a/lib/binarytools/MemoryStream.cpp
++++ b/lib/binarytools/MemoryStream.cpp
+@@ -10,10 +10,17 @@ LUS::MemoryStream::MemoryStream() {
+     // mBuffer.reserve(1024 * 16);
+     mBufferSize = 0;
+     mBaseAddress = 0;
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    mExternalReadBuffer = nullptr;
++#endif
+ }
+ 
+ LUS::MemoryStream::MemoryStream(char* nBuffer, size_t nBufferSize) : MemoryStream() {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    mExternalReadBuffer = nBuffer;
++#else
+     mBuffer = std::vector<char>(nBuffer, nBuffer + nBufferSize);
++#endif
+     mBufferSize = nBufferSize;
+     mBaseAddress = 0;
+ }
+@@ -22,6 +29,11 @@ LUS::MemoryStream::~MemoryStream() {
+ }
+ 
+ uint64_t LUS::MemoryStream::GetLength() {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    if (mExternalReadBuffer != nullptr) {
++        return mBufferSize;
++    }
++#endif
+     return mBuffer.size();
+ }
+ 
+@@ -38,22 +50,43 @@ void LUS::MemoryStream::Seek(int32_t offset, SeekOffsetType seekType) {
+ std::unique_ptr<char[]> LUS::MemoryStream::Read(size_t length) {
+     std::unique_ptr<char[]> result = std::make_unique<char[]>(length);
+ 
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    const char* source = mExternalReadBuffer != nullptr ? mExternalReadBuffer : mBuffer.data();
++    memcpy_s(result.get(), length, &source[mBaseAddress], length);
++#else
+     memcpy_s(result.get(), length, &mBuffer[mBaseAddress], length);
++#endif
+     mBaseAddress += length;
+ 
+     return result;
+ }
+ 
+ void LUS::MemoryStream::Read(const char* dest, size_t length) {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    const char* source = mExternalReadBuffer != nullptr ? mExternalReadBuffer : mBuffer.data();
++    memcpy_s((void*)dest, length, &source[mBaseAddress], length);
++#else
+     memcpy_s((void*)dest, length, &mBuffer[mBaseAddress], length);
++#endif
+     mBaseAddress += length;
+ }
+ 
+ int8_t LUS::MemoryStream::ReadByte() {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    if (mExternalReadBuffer != nullptr) {
++        return mExternalReadBuffer[mBaseAddress++];
++    }
++#endif
+     return mBuffer[mBaseAddress++];
+ }
+ 
+ void LUS::MemoryStream::Write(char* srcBuffer, size_t length) {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    if (mExternalReadBuffer != nullptr) {
++        mBuffer.assign(mExternalReadBuffer, mExternalReadBuffer + mBufferSize);
++        mExternalReadBuffer = nullptr;
++    }
++#endif
+     if (mBaseAddress + length >= mBuffer.size()) {
+         mBuffer.resize(mBaseAddress + length);
+         mBufferSize += length;
+@@ -64,6 +97,12 @@ void LUS::MemoryStream::Write(char* srcBuffer, size_t length) {
+ }
+ 
+ void LUS::MemoryStream::WriteByte(int8_t value) {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    if (mExternalReadBuffer != nullptr) {
++        mBuffer.assign(mExternalReadBuffer, mExternalReadBuffer + mBufferSize);
++        mExternalReadBuffer = nullptr;
++    }
++#endif
+     if (mBaseAddress >= mBuffer.size()) {
+         mBuffer.resize(mBaseAddress + 1);
+         mBufferSize = mBaseAddress;
+@@ -73,6 +112,11 @@ void LUS::MemoryStream::WriteByte(int8_t value) {
+ }
+ 
+ std::vector<char> LUS::MemoryStream::ToVector() {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    if (mExternalReadBuffer != nullptr) {
++        return std::vector<char>(mExternalReadBuffer, mExternalReadBuffer + mBufferSize);
++    }
++#endif
+     return mBuffer;
+ }
+ 
+diff --git a/lib/binarytools/MemoryStream.h b/lib/binarytools/MemoryStream.h
+index 9f38169..4c63daa 100644
+--- a/lib/binarytools/MemoryStream.h
++++ b/lib/binarytools/MemoryStream.h
+@@ -30,5 +30,11 @@ class MemoryStream : public Stream {
+   protected:
+     std::vector<char> mBuffer;
+     std::size_t mBufferSize;
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    // BinaryReader inputs remain owned by their caller for the reader's
++    // lifetime. Borrow them on memory-constrained 3DS builds instead of
++    // duplicating every ROM or decompressed segment in a second vector.
++    const char* mExternalReadBuffer;
++#endif
+ };
+ } // namespace LUS
+diff --git a/src/Companion.cpp b/src/Companion.cpp
+index a881533..ed0fd27 100644
+--- a/src/Companion.cpp
++++ b/src/Companion.cpp
+@@ -12,6 +12,31 @@
+ #include <iostream>
+ #include <filesystem>
+ 
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++#include <3ds.h>
++#include <malloc.h>
++extern "C" void Mk64InstallLogWrite(const char* message);
++extern "C" void Mk64InstallLogWritef(const char* format, ...); extern "C" bool Mk64Extraction3DSShouldCancel(void);
++
++namespace {
++void Mk64LogApplicationMemory(const char* phase) {
++    const struct mallinfo heap = mallinfo();
++    Mk64InstallLogWritef(
++        "Torch memory at %s: heap arena=%lu allocated=%lu free=%lu releasable=%lu; linear free=%lu; "
++        "application region unused=%lu/%lu.",
++        phase, static_cast<unsigned long>(heap.arena), static_cast<unsigned long>(heap.uordblks),
++        static_cast<unsigned long>(heap.fordblks), static_cast<unsigned long>(heap.keepcost),
++        static_cast<unsigned long>(linearSpaceFree()),
++        static_cast<unsigned long>(osGetMemRegionFree(MEMREGION_APPLICATION)),
++        static_cast<unsigned long>(osGetMemRegionSize(MEMREGION_APPLICATION)));
++}
++}
++#else
++static bool Mk64Extraction3DSShouldCancel() {
++    return false;
++}
++#endif
++
+ #include "factories/GenericArrayFactory.h"
+ #include "factories/VtxFactory.h"
+ #include "factories/MtxFactory.h"
+@@ -128,6 +153,58 @@ static std::string GetTypeNode(YAML::Node& node) {
+ 
+ Companion* Companion::Instance;
+ 
++Companion::~Companion() noexcept {
++    // Decompression buffers are process-global in Torch. Release them before
++    // any other extractor state so an exception cannot strand several MiB
++    // until application exit or contaminate a retry in the same process.
++    Decompressor::ClearCache();
++#ifdef NAUDIO_SUPPORT
++    delete AudioManager::Instance;
++    AudioManager::Instance = nullptr;
++    AudioContext::Reset();
++#endif
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    // Process() owns the archive writer. Destroy it even when a factory throws
++    // so stdio handles are closed before the installer validates or moves the
++    // partial archive.
++    delete this->gCurrentWrapper;
++    this->gCurrentWrapper = nullptr;
++#endif
++}
++
++bool Companion::ExportBinaryResult(ParseResultData& result) {
++    if(!result.data.has_value()) {
++        return false;
++    }
++
++    const auto factory = this->GetFactory(result.type);
++    if(!factory.has_value()) {
++        throw std::runtime_error("No factory available while exporting binary asset '" + result.name + "'");
++    }
++    const auto exporter = factory->get()->GetExporter(ExportType::Binary);
++    if(!exporter.has_value()) {
++        return false;
++    }
++    if(this->gCurrentWrapper == nullptr) {
++        throw std::runtime_error("Binary archive writer is unavailable while exporting '" + result.name + "'");
++    }
++
++    std::ostringstream stream;
++    auto data = result.data.value();
++    exporter->get()->Export(stream, data, result.name, result.node, &result.name);
++    auto serialized = stream.str();
++    std::vector<char> binaryData(serialized.begin(), serialized.end());
++    this->gCurrentWrapper->AddFile(result.name, std::move(binaryData));
++
++    for(auto& entry : this->gCompanionFiles) {
++        auto output = (this->gCurrentDirectory / entry.first).string();
++        std::replace(output.begin(), output.end(), '\\', '/');
++        this->gCurrentWrapper->AddFile(output, std::move(entry.second));
++    }
++    this->gCompanionFiles.clear();
++    return true;
++}
++
+ void Companion::Init(const ExportType type) {
+ 
+     spdlog::set_level(spdlog::level::debug);
+@@ -384,11 +461,25 @@ void Companion::ParseCurrentFileConfig(YAML::Node node) {
+                     this->gCurrentFile = externalFileName;
+                     this->gCurrentDirectory = std::filesystem::relative(externalFileName, this->gAssetPath).replace_extension("");
+ 
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++                    const std::string diagnosticPath =
++                        fs::path(externalFileName).lexically_relative(this->gSourceDirectory).generic_string();
++                    Mk64InstallLogWritef("Torch: loading dependent YAML: %s.",
++                                         diagnosticPath.empty() ? "(unknown metadata file)" : diagnosticPath.c_str());
++#endif
+                     YAML::Node root = YAML::LoadFile(externalFileName);
+ 
+                     if (!this->gProcessedFiles.contains(this->gCurrentFile)) {
+-                        ProcessFile(root);
++                        ProcessFile(root, true);
+                         this->gProcessedFiles.insert(this->gCurrentFile);
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++                        Mk64InstallLogWrite("Torch: completed dependent YAML.");
++#endif
++                    } else {
++                        // Binary export discards parsed data once it has been
++                        // written to SD. Rebuild only the compact address index
++                        // when a later parent needs this already-written file.
++                        this->IndexAddressNodes(root, false);
+                     }
+ 
+                     SPDLOG_INFO("Finishing processing of file: {}", currentFile);
+@@ -507,6 +598,13 @@ void Companion::ParseCurrentFileConfig(YAML::Node node) {
+ }
+ 
+ void Companion::ParseHash() {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    // The on-device installer always creates a fresh binary archive. Building
++    // Torch's incremental YAML hash tree only consumes heap and writes a cache
++    // that this one-shot workflow never reuses.
++    this->gHashNode = YAML::Node();
++    return;
++#else
+     const auto out = this->gDestinationDirectory / "torch.hash.yml";
+ 
+     if(fs::exists(out)) {
+@@ -514,6 +612,7 @@ void Companion::ParseHash() {
+     } else {
+         this->gHashNode = YAML::Node();
+     }
++#endif
+ }
+ 
+ std::string ExportTypeToString(ExportType type) {
+@@ -530,6 +629,12 @@ std::string ExportTypeToString(ExportType type) {
+ 
+ bool Companion::NodeHasChanges(const std::string& path) {
+ 
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    if(this->gConfig.exporterType == ExportType::Binary) {
++        return true;
++    }
++#endif
++
+     if(this->gConfig.modding) {
+         return true;
+     }
+@@ -608,7 +713,186 @@ void Companion::ProcessTables(YAML::Node& rom) {
+     }
+ }
+ 
+-void Companion::ProcessFile(YAML::Node root) {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++bool Companion::ShouldStreamKartFile(const std::string& path) const {
++    if(this->gConfig.exporterType != ExportType::Binary) {
++        return false;
++    }
++
++    const fs::path yamlPath(path);
++    const std::string filename = yamlPath.filename().string();
++    return filename.ends_with("_kart.yml") && yamlPath.parent_path().filename() == "karts" &&
++           yamlPath.parent_path().parent_path().filename() == "textures";
++}
++
++void Companion::ProcessStreamedKartFile(const std::string& path) {
++    constexpr size_t kAssetsPerChunk = 64;
++    constexpr size_t kExpectedAssetsPerKart = 2345;
++
++    std::ifstream input(path);
++    if(!input.is_open()) {
++        throw std::runtime_error("Could not open streamed kart metadata: " + path);
++    }
++
++    this->gConfig.segment.local.clear();
++    this->gFileHeader.clear();
++    this->gCurrentPad = 0;
++    this->gCurrentVram = std::nullopt;
++    this->gCurrentVirtualPath.clear();
++    this->gCurrentSegmentNumber = 0;
++    this->gCurrentCompressionType = CompressionType::None;
++    this->gCurrentFileOffset = 0;
++    this->gTables.clear();
++    this->gCurrentExternalFiles.clear();
++    this->gManualSegments.clear();
++    GFXDOverride::ClearVtx();
++
++    std::string currentKey;
++    std::string currentBlock;
++    std::string chunkYaml;
++    size_t pendingAssets = 0;
++    size_t processedAssets = 0;
++    size_t processedChunks = 0;
++    bool configParsed = false;
++
++    const auto processChunk = [&]() { if(Mk64Extraction3DSShouldCancel()) throw std::runtime_error("Extraction cancelled by user.");
++        if(pendingAssets == 0) {
++            return;
++        }
++
++        YAML::Node chunkRoot = YAML::Load(chunkYaml);
++        if(!chunkRoot.IsMap() || chunkRoot.size() != pendingAssets) {
++            throw std::runtime_error("Streamed kart metadata chunk did not preserve every top-level asset");
++        }
++
++        size_t chunkAssets = 0;
++        for(auto asset = chunkRoot.begin(); asset != chunkRoot.end(); ++asset) { if(Mk64Extraction3DSShouldCancel()) throw std::runtime_error("Extraction cancelled by user.");
++            const std::string entryName = asset->first.as<std::string>();
++            auto assetNode = asset->second;
++            if(GetTypeNode(assetNode) != "TEXTURE" || !assetNode["offset"] ||
++               (assetNode["tlut"] && assetNode["colors"])) {
++                throw std::runtime_error("Streamed kart metadata contains an unsupported asset: " + entryName);
++            }
++
++            if(this->gCurrentFileOffset) {
++                const auto offset = assetNode["offset"].as<uint32_t>();
++                if(!IS_SEGMENTED(offset)) {
++                    assetNode["offset"] = (this->gCurrentSegmentNumber << 24) | offset;
++                }
++            }
++            if(!this->gCurrentVirtualPath.empty()) {
++                assetNode["path"] = this->gCurrentVirtualPath;
++            }
++
++            std::string output = (this->gCurrentDirectory / entryName).string();
++            std::replace(output.begin(), output.end(), '\\', '/');
++            this->gConfig.segment.temporal.clear();
++            auto result = this->ParseNode(assetNode, output);
++            if(!result.has_value() || !this->ExportBinaryResult(result.value())) {
++                throw std::runtime_error("Streamed kart texture could not be exported: " + entryName);
++            }
++            ++chunkAssets;
++            ++processedAssets;
++        }
++
++        if(chunkAssets != pendingAssets) {
++            throw std::runtime_error("Streamed kart metadata chunk ended with an unexpected asset count");
++        }
++
++        chunkRoot = YAML::Node();
++        Decompressor::ClearCache();
++        ++processedChunks;
++        Mk64InstallLogWritef("Torch: streamed kart chunk %zu (%zu/%zu textures written to SD).",
++                             processedChunks, processedAssets, kExpectedAssetsPerKart);
++        if((processedChunks % 8) == 0) {
++            Mk64LogApplicationMemory("streamed kart extraction");
++        }
++        chunkYaml.clear();
++        pendingAssets = 0;
++    };
++
++    const auto finishBlock = [&]() {
++        if(currentKey.empty()) {
++            return;
++        }
++
++        if(currentKey == ":config") {
++            if(configParsed || pendingAssets != 0 || processedAssets != 0) {
++                throw std::runtime_error("Streamed kart metadata has a misplaced or duplicate :config block");
++            }
++            YAML::Node configRoot = YAML::Load(currentBlock);
++            if(!configRoot.IsMap() || configRoot.size() != 1 || !configRoot[":config"]) {
++                throw std::runtime_error("Streamed kart metadata has an invalid :config block");
++            }
++            const YAML::Node config = configRoot[":config"];
++            if(config["external_files"]) {
++                throw std::runtime_error("Streamed kart metadata cannot contain external YAML dependencies");
++            }
++            this->ParseCurrentFileConfig(config);
++            configRoot = YAML::Node();
++            configParsed = true;
++        } else {
++            if(!configParsed) {
++                throw std::runtime_error("Streamed kart metadata must begin with :config");
++            }
++            chunkYaml.append(currentBlock);
++            ++pendingAssets;
++            if(pendingAssets == kAssetsPerChunk) {
++                processChunk();
++            }
++        }
++
++        currentKey.clear();
++        currentBlock.clear();
++    };
++
++    std::string inputLine;
++    while(std::getline(input, inputLine)) {
++        const bool isTopLevel = !inputLine.empty() && inputLine.front() != ' ' && inputLine.front() != '\t' &&
++                                inputLine.front() != '#';
++        if(isTopLevel) {
++            finishBlock();
++            const size_t keyEnd = inputLine.find_last_not_of(" \t\r");
++            if(keyEnd == std::string::npos || inputLine[keyEnd] != ':') {
++                throw std::runtime_error("Streamed kart metadata contains a non-mapping top-level line");
++            }
++            currentKey = inputLine.substr(0, keyEnd);
++        } else if(currentKey.empty()) {
++            const size_t content = inputLine.find_first_not_of(" \t\r");
++            if(content != std::string::npos && inputLine[content] != '#') {
++                throw std::runtime_error("Streamed kart metadata contains content before :config");
++            }
++            continue;
++        }
++        currentBlock.append(inputLine);
++        currentBlock.push_back('\n');
++    }
++    if(input.bad()) {
++        throw std::runtime_error("Could not finish reading streamed kart metadata: " + path);
++    }
++
++    finishBlock();
++    processChunk();
++    if(!configParsed || processedAssets != kExpectedAssetsPerKart) {
++        throw std::runtime_error("Streamed kart metadata did not contain the expected 2345 textures");
++    }
++
++    this->gParseResults.erase(this->gCurrentFile);
++    this->gWriteMap.erase(this->gCurrentFile);
++    this->gAddrMap.erase(this->gCurrentFile);
++    Decompressor::ClearCache();
++    malloc_trim(0);
++    Mk64InstallLogWritef("Torch: streamed kart YAML completed in %zu chunks with %zu textures.",
++                         processedChunks, processedAssets);
++    Mk64LogApplicationMemory("streamed kart completion");
++}
++#endif
++
++void Companion::IndexAddressNodes(YAML::Node& root, const bool bindAudioSamples) {
++    this->gCurrentSegmentNumber = 0;
++    this->gCurrentFileOffset = 0;
++    this->gCurrentCompressionType = CompressionType::None;
++
+     // Set compressed file offsets and compression type
+     if (auto segments = root[":config"]["segments"]) {
+         if (segments.IsSequence() && segments.size() > 0) {
+@@ -625,15 +909,21 @@ void Companion::ProcessFile(YAML::Node root) {
+         }
+     }
+ 
+-    for(auto asset = root.begin(); asset != root.end(); ++asset){
++    auto& addressEntries = this->gAddrMap[this->gCurrentFile];
++    addressEntries.clear();
++
++    for(auto asset = root.begin(); asset != root.end(); ++asset){ if(Mk64Extraction3DSShouldCancel()) throw std::runtime_error("Extraction cancelled by user.");
+         auto node = asset->second;
+         auto entryName = asset->first.as<std::string>();
+         auto output = (this->gCurrentDirectory / entryName).string();
+         std::replace(output.begin(), output.end(), '\\', '/');
+ 
+-        if(node["type"]){
++        if(bindAudioSamples && node["type"]){
+             const auto type = GetTypeNode(node);
+             if(type == "NAUDIO:V0:SAMPLE"){
++                if(AudioManager::Instance == nullptr) {
++                    throw std::runtime_error("Legacy audio state is unavailable while indexing a sample");
++                }
+                 AudioManager::Instance->bind_sample(node, output);
+             }
+         }
+@@ -652,8 +942,12 @@ void Companion::ProcessFile(YAML::Node root) {
+             node["path"] = gCurrentVirtualPath;
+         }
+ 
+-        this->gAddrMap[this->gCurrentFile][node["offset"].as<uint32_t>()] = std::make_tuple(output, node);
++        addressEntries[node["offset"].as<uint32_t>()] = std::make_tuple(output, node);
+     }
++}
++
++void Companion::ProcessFile(YAML::Node root, const bool retainAddressMapForCaller) {
++    this->IndexAddressNodes(root, true);
+ 
+     // Stupid hack because the iteration broke the assets
+     root = YAML::LoadFile(this->gCurrentFile);
+@@ -674,6 +968,11 @@ void Companion::ProcessFile(YAML::Node root) {
+         this->ParseCurrentFileConfig(root[":config"]);
+     }
+ 
++    // These dependency indices must remain alive through the complete parent
++    // parse/export pass. They are compact YAML address maps, not parsed asset
++    // payloads, and are erased immediately after their direct consumer ends.
++    const auto directExternalFiles = this->gCurrentExternalFiles;
++
+     if(!this->NodeHasChanges(this->gCurrentFile) && !this->gNodeForceProcessing) {
+         return;
+     }
+@@ -730,18 +1029,7 @@ void Companion::ProcessFile(YAML::Node root) {
+ 
+         switch (this->gConfig.exporterType) {
+             case ExportType::Binary: {
+-                stream.str("");
+-                stream.clear();
+-                exporter->get()->Export(stream, data, result.name, result.node, &result.name);
+-                auto data = stream.str();
+-                this->gCurrentWrapper->AddFile(result.name, std::vector(data.begin(), data.end()));
+-
+-                for(auto& entry : this->gCompanionFiles){
+-                    auto output = (this->gCurrentDirectory / entry.first).string();
+-                    std::replace(output.begin(), output.end(), '\\', '/');
+-                    this->gCurrentWrapper->AddFile(output, entry.second);
+-                }
+-
++                this->ExportBinaryResult(result);
+                 break;
+             }
+             case ExportType::XML:
+@@ -789,7 +1077,7 @@ void Companion::ProcessFile(YAML::Node root) {
+ 
+         this->gCompanionFiles.clear();
+ 
+-        if(result.node["offset"]) {
++        if(this->gConfig.exporterType != ExportType::Binary && result.node["offset"]) {
+             auto alignment = GetSafeNode<uint32_t>(result.node, "alignment", impl->GetAlignment());
+             if(!endptr.has_value()) {
+                 wEntry = {
+@@ -832,7 +1120,21 @@ void Companion::ProcessFile(YAML::Node root) {
+             }
+         }
+ 
+-        this->gWriteMap[this->gCurrentFile][result.type].push_back(wEntry);
++        if(this->gConfig.exporterType != ExportType::Binary) {
++            this->gWriteMap[this->gCurrentFile][result.type].push_back(wEntry);
++        }
++    }
++
++    if(this->gConfig.exporterType == ExportType::Binary) {
++        this->gParseResults.erase(this->gCurrentFile);
++        this->gWriteMap.erase(this->gCurrentFile);
++        for(const auto& externalFile : directExternalFiles) {
++            this->gAddrMap.erase(externalFile);
++        }
++        if(!retainAddressMapForCaller) {
++            this->gAddrMap.erase(this->gCurrentFile);
++        }
++        Decompressor::ClearCache();
+     }
+ 
+     auto fsout = fs::path(this->gConfig.outputPath);
+@@ -1022,28 +1324,78 @@ void Companion::Process() {
+     auto configPath = this->gSourceDirectory / "config.yml";
+ 
+     if(!fs::exists(configPath)) {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++        Mk64InstallLogWrite(("Torch: config file not found: " + configPath.string()).c_str());
++        throw std::runtime_error("Torch config.yml is missing from the local extractor metadata.");
++#else
+         SPDLOG_ERROR("No config file found");
+         return;
++#endif
+     }
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    Mk64InstallLogWrite(("Torch: using config file: " + configPath.string()).c_str());
++#endif
+ 
+     auto start = duration_cast<milliseconds>(system_clock::now().time_since_epoch());
+     YAML::Node config = YAML::LoadFile(configPath.string());
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    Mk64LogApplicationMemory("config load");
++#endif
+ 
+     bool isDirectoryMode = config["mode"] && config["mode"].as<std::string>() == "directory";
+ 
+     if(!isDirectoryMode) {
+         if(this->gRomPath.has_value()){
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++            FILE* input = std::fopen(this->gRomPath.value().string().c_str(), "rb");
++            if(input == nullptr) {
++                throw std::runtime_error("Could not open the verified ROM for extraction.");
++            }
++            if(std::fseek(input, 0, SEEK_END) != 0) {
++                std::fclose(input);
++                throw std::runtime_error("Could not size the verified ROM for extraction.");
++            }
++            const long size = std::ftell(input);
++            if(size <= 0) {
++                std::fclose(input);
++                throw std::runtime_error("The verified ROM is empty.");
++            }
++            if(std::fseek(input, 0, SEEK_SET) != 0) {
++                std::fclose(input);
++                throw std::runtime_error("Could not rewind the verified ROM for extraction.");
++            }
++            Mk64InstallLogWritef("Torch: allocating %ld bytes for ROM data after config load.", size);
++            this->gRomData.resize(static_cast<size_t>(size));
++            const size_t read = std::fread(this->gRomData.data(), 1, this->gRomData.size(), input);
++            if(read != this->gRomData.size() || std::ferror(input) != 0) {
++                std::fclose(input);
++                throw std::runtime_error("Could not read the verified ROM for extraction.");
++            }
++            std::fclose(input);
++            Mk64InstallLogWritef("Torch: loaded %zu ROM bytes using stdio.", this->gRomData.size());
++            Mk64LogApplicationMemory("ROM load");
++#else
+             std::ifstream input( this->gRomPath.value(), std::ios::binary );
+             this->gRomData = std::vector<uint8_t>( std::istreambuf_iterator( input ), {} );
+             input.close();
++#endif
+         }
+ 
+         this->gCartridge = std::make_shared<N64::Cartridge>(this->gRomData);
+         this->gCartridge->Initialize();
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++        Mk64InstallLogWrite("Torch: parsed the cartridge header without copying the ROM.");
++        Mk64LogApplicationMemory("cartridge initialization");
++#endif
+ 
+         if(!config[this->gCartridge->GetHash()]){
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++            Mk64InstallLogWrite("Torch: verified ROM has no matching extractor configuration.");
++            throw std::runtime_error("The verified ROM has no matching Torch configuration.");
++#else
+             SPDLOG_ERROR("No config found for {}", this->gCartridge->GetHash());
+             return;
++#endif
+         }
+ 
+         this->gConfig.parseMode = ParseMode::Default;
+@@ -1091,8 +1443,13 @@ void Companion::Process() {
+ 
+     auto cfg = rom["config"];
+     if(!cfg) {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++        Mk64InstallLogWrite("Torch: the selected ROM configuration has no extraction settings.");
++        throw std::runtime_error("The Torch extraction settings are missing.");
++#else
+         SPDLOG_ERROR("No config found for {}", !isDirectoryMode ? this->gCartridge->GetHash() : GetSafeNode<std::string>(config, "folder"));
+         return;
++#endif
+     }
+ 
+     if (rom["metadata"]) {
+@@ -1166,8 +1523,13 @@ void Companion::Process() {
+             this->gConfig.gbi.version = GBIVersion::f3dex;
+             this->gConfig.gbi.subversion = GBIMinorVersion::Mk64;
+         } else {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++            Mk64InstallLogWrite(("Torch: unsupported GBI setting in config.yml: " + key).c_str());
++            throw std::runtime_error("The Torch configuration contains an unsupported GBI setting.");
++#else
+             SPDLOG_ERROR("Invalid GBI version");
+             return;
++#endif
+         }
+ 
+         if(gbi_floats) {
+@@ -1272,10 +1634,13 @@ void Companion::Process() {
+         }
+     }
+ 
+-    if (wrapper) {
++    this->gCurrentWrapper = wrapper;
++    if (this->gCurrentWrapper != nullptr) {
+         wrapper->CreateArchive();
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++        Mk64LogApplicationMemory("archive creation");
++#endif
+     }
+-    this->gCurrentWrapper = wrapper;
+ 
+     auto vWriter = LUS::BinaryWriter();
+     vWriter.SetEndianness(Torch::Endianness::Big);
+@@ -1287,7 +1652,8 @@ void Companion::Process() {
+         vWriter.Write((uint32_t) 0);
+     }
+ 
+-    for (const auto & entry : Torch::getRecursiveEntries(this->gAssetPath)){
++    size_t processedYamlFiles = 0;
++    for (const auto & entry : Torch::getRecursiveEntries(this->gAssetPath)){ if(Mk64Extraction3DSShouldCancel()) throw std::runtime_error("Extraction cancelled by user.");
+         if(entry.is_directory())  {
+             continue;
+         }
+@@ -1302,14 +1668,46 @@ void Companion::Process() {
+             continue;
+         }
+ 
+-        YAML::Node root = YAML::LoadFile(yamlPath);
+-        this->gCurrentDirectory = relative(entry.path(), this->gAssetPath).replace_extension("");
+         this->gCurrentFile = yamlPath;
+-
+-        if (!this->gProcessedFiles.contains(this->gCurrentFile)) {
++        if (this->gProcessedFiles.contains(this->gCurrentFile)) {
++            continue;
++        }
++        this->gCurrentDirectory = relative(entry.path(), this->gAssetPath).replace_extension("");
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++        const std::string diagnosticPath = entry.path().lexically_relative(this->gSourceDirectory).generic_string();
++        Mk64InstallLogWritef("Torch: loading YAML %zu: %s.", processedYamlFiles + 1,
++                             diagnosticPath.empty() ? "(unknown metadata file)" : diagnosticPath.c_str());
++#endif
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++        if(this->ShouldStreamKartFile(yamlPath)) {
++            Mk64InstallLogWrite("Torch: using bounded-memory kart streaming; parsed textures are written directly to SD.");
++            this->ProcessStreamedKartFile(yamlPath);
++        } else {
++            YAML::Node root = YAML::LoadFile(yamlPath);
+             ProcessFile(root);
+-            this->gProcessedFiles.insert(this->gCurrentFile);
+         }
++#else
++        YAML::Node root = YAML::LoadFile(yamlPath);
++        ProcessFile(root);
++#endif
++        this->gProcessedFiles.insert(this->gCurrentFile);
++        ++processedYamlFiles;
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++#ifdef NAUDIO_SUPPORT
++        if(entry.path().filename() == "sequences.yml" && entry.path().parent_path().filename() == "sound") {
++            delete AudioManager::Instance;
++            AudioManager::Instance = nullptr;
++            AudioContext::Reset();
++            malloc_trim(0);
++            Mk64InstallLogWrite("Torch: released legacy audio extraction state after writing the sound subtree.");
++            Mk64LogApplicationMemory("legacy audio cleanup");
++        }
++#endif
++        Mk64InstallLogWritef("Torch: completed YAML %zu.", processedYamlFiles);
++        if((processedYamlFiles % 8) == 0) {
++            Mk64LogApplicationMemory("asset extraction");
++        }
++#endif
+     }
+ 
+     if(wrapper != nullptr) {
+@@ -1320,10 +1718,15 @@ void Companion::Process() {
+                 std::vector<char> data((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+                 input.close();
+                 std::string filename = fs::path(filePath).filename().string();
+-                wrapper->AddFile(filename, data);
++                wrapper->AddFile(filename, std::move(data));
+                 SPDLOG_INFO("Added additional file: {}", filename);
+             } else {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++                Mk64InstallLogWrite(("Torch: required additional metadata file is missing: " + filePath).c_str());
++                throw std::runtime_error("A required additional Torch metadata file is missing.");
++#else
+                 SPDLOG_WARN("Could not open additional file: {}", filePath);
++#endif
+             }
+         }
+ 
+@@ -1333,10 +1736,15 @@ void Companion::Process() {
+         wrapper->Close();
+     }
+ 
++#if !defined(__3DS__) && !defined(PLATFORM_3DS)
+     // Write entries hash
+     std::ofstream file(this->gDestinationDirectory / "torch.hash.yml", std::ios::binary);
+     file << this->gHashNode;
+     file.close();
++#else
++    Mk64InstallLogWritef("Torch: completed %zu YAML files without an incremental hash cache.", processedYamlFiles);
++    Mk64LogApplicationMemory("archive finalization");
++#endif
+ 
+     auto end = duration_cast<milliseconds>(system_clock::now().time_since_epoch());
+     auto level = spdlog::get_level();
+@@ -1393,7 +1801,7 @@ void Companion::Pack(const std::string& folder, const std::string& output, const
+         std::replace(normalized.begin(), normalized.end(), '\\', '/');
+         // Remove parent folder
+         normalized = normalized.substr(folder.length() + 1);
+-        wrapper->AddFile(normalized, data);
++        wrapper->AddFile(normalized, std::move(data));
+         SPDLOG_CRITICAL("> Added {}", normalized);
+     }
+ 
+@@ -1710,7 +2118,7 @@ std::optional<YAML::Node> Companion::AddAsset(YAML::Node asset) {
+         }
+     }
+ 
+-    auto rom = this->GetRomData();
++    auto& rom = this->GetRomData();
+     auto factory = this->GetFactory(type);
+ 
+     if(!factory.has_value()) {
+diff --git a/src/Companion.h b/src/Companion.h
+index 40a664e..2081aa9 100644
+--- a/src/Companion.h
++++ b/src/Companion.h
+@@ -125,7 +125,7 @@ public:
+     explicit Companion(std::vector<uint8_t> rom, const ArchiveType otr, const bool debug, const bool modding = false,
+                        const std::string& srcDir = "", const std::string& destPath = "") : gCartridge(nullptr),
+                        gSourceDirectory(srcDir), gDestinationDirectory(destPath) {
+-        this->gRomData = rom;
++        this->gRomData = std::move(rom);
+         this->gConfig.otrMode = otr;
+         this->gConfig.debug = debug;
+         this->gConfig.modding = modding;
+@@ -138,6 +138,8 @@ public:
+     explicit Companion(std::vector<uint8_t> rom, const ArchiveType otr, const bool debug, const std::string& srcDir = "", const std::string& destPath = "") :
+                        Companion(rom, otr, debug, false, srcDir, destPath) {}
+ 
++    ~Companion() noexcept;
++
+     void Init(ExportType type);
+ 
+     bool NodeHasChanges(const std::string& string);
+@@ -156,7 +158,7 @@ public:
+     GBIVersion GetGBIVersion() const { return this->gConfig.gbi.version; }
+     GBIMinorVersion GetGBIMinorVersion() const { return  this->gConfig.gbi.subversion; }
+     std::unordered_map<std::string, std::vector<YAML::Node>> GetCourseMetadata() { return this->gCourseMetadata; }
+-    std::optional<std::string> GetEnumFromValue(const std::string& key, int id);
++    std::optional<std::string> GetEnumFromValue(const std::string& key, int32_t id);
+     bool IsUsingIndividualIncludes() const { return this->gIndividualIncludes; }
+ 
+     std::optional<ParseResultData> GetParseDataByAddr(uint32_t addr);
+@@ -208,7 +210,7 @@ private:
+     std::shared_ptr<N64::Cartridge> gCartridge;
+     std::unordered_map<std::string, std::vector<YAML::Node>> gCourseMetadata;
+     std::unordered_map<std::string, std::unordered_map<int32_t, std::string>> gEnums;
+-    BinaryWrapper* gCurrentWrapper;
++    BinaryWrapper* gCurrentWrapper = nullptr;
+ 
+     // Temporal Variables
+     std::string gCurrentFile;
+@@ -236,7 +238,13 @@ private:
+     std::unordered_map<std::string, std::tuple<uint32_t, uint32_t>> gVirtualAddrMap;
+     std::unordered_map<std::string, std::unordered_map<uint32_t, std::tuple<std::string, YAML::Node>>> gAddrMap;
+ 
+-    void ProcessFile(YAML::Node root);
++    void IndexAddressNodes(YAML::Node& root, bool bindAudioSamples);
++    void ProcessFile(YAML::Node root, bool retainAddressMapForCaller = false);
++    bool ExportBinaryResult(ParseResultData& result);
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    bool ShouldStreamKartFile(const std::string& path) const;
++    void ProcessStreamedKartFile(const std::string& path);
++#endif
+     void ParseEnums(std::string& file);
+     void ParseHash();
+     void ParseModdingConfig();
+diff --git a/src/archive/BinaryWrapper.h b/src/archive/BinaryWrapper.h
+index d6f4b39..9820fdb 100644
+--- a/src/archive/BinaryWrapper.h
++++ b/src/archive/BinaryWrapper.h
+@@ -11,7 +11,7 @@ public:
+     virtual ~BinaryWrapper() = default;
+ 
+     virtual int32_t CreateArchive(void) = 0;
+-    virtual bool AddFile(const std::string& path, std::vector<char> data) = 0;
++    virtual bool AddFile(const std::string& path, std::vector<char>&& data) = 0;
+     virtual int32_t Close(void) = 0;
+ protected:
+     std::mutex mMutex;
+diff --git a/src/archive/SWrapper.cpp b/src/archive/SWrapper.cpp
+index fab0caf..e835233 100644
+--- a/src/archive/SWrapper.cpp
++++ b/src/archive/SWrapper.cpp
+@@ -29,7 +29,7 @@ int32_t SWrapper::CreateArchive() {
+ #endif
+ }
+ 
+-bool SWrapper::AddFile(const std::string& path, std::vector<char> data) {
++bool SWrapper::AddFile(const std::string& path, std::vector<char>&& data) {
+ #ifndef USE_STORMLIB
+     throw std::runtime_error("StormLib is not enabled. Cannot create file");
+ #else
+diff --git a/src/archive/SWrapper.h b/src/archive/SWrapper.h
+index 5e0096e..61c8bff 100644
+--- a/src/archive/SWrapper.h
++++ b/src/archive/SWrapper.h
+@@ -12,7 +12,7 @@ public:
+     explicit SWrapper(const std::string& path);
+ 
+     int32_t CreateArchive(void) override;
+-    bool AddFile(const std::string& path, std::vector<char> data) override;
++    bool AddFile(const std::string& path, std::vector<char>&& data) override;
+     int32_t Close(void) override;
+ #ifdef USE_STORMLIB
+ private:
+diff --git a/src/archive/ZWrapper.cpp b/src/archive/ZWrapper.cpp
+index 6440b62..6630725 100644
+--- a/src/archive/ZWrapper.cpp
++++ b/src/archive/ZWrapper.cpp
+@@ -5,21 +5,221 @@
+ 
+ #include "spdlog/spdlog.h"
+ #include <Companion.h>
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++#include <cerrno>
++#include <cstdio>
++#include <cstring>
++#include <stdexcept>
++#include <miniz/zip_file.hpp>
++
++extern "C" void Mk64InstallLogWrite(const char* message); extern "C" bool Mk64Extraction3DSShouldCancel(void);
++
++namespace {
++constexpr size_t kMk64ZipWriteChunkSize = 64 * 1024;
++constexpr size_t kMk64ZipDeflateChunkSize = 16 * 1024;
++constexpr uint16_t kMk64ZipDataDescriptorFlag = 1U << 3U;
++constexpr uint16_t kMk64ZipMethodStored = 0;
++constexpr uint16_t kMk64ZipMethodDeflate = 8;
++
++bool Mk64WriteAll(FILE* file, const void* buffer, size_t size) {
++    if (file == nullptr) {
++        errno = EBADF;
++        return false;
++    }
++    const auto* bytes = static_cast<const unsigned char*>(buffer);
++    size_t totalWritten = 0;
++    while (totalWritten < size) { if(Mk64Extraction3DSShouldCancel()) { errno = ECANCELED; return false; }
++        const size_t chunkSize = std::min(size - totalWritten, kMk64ZipWriteChunkSize);
++        errno = 0;
++        const size_t written = std::fwrite(bytes + totalWritten, 1, chunkSize, file);
++        totalWritten += written;
++        if (written != chunkSize) {
++            if (errno == 0) errno = EIO;
++            return false;
++        }
++    }
++    return true;
++}
++
++bool Mk64WriteU16(FILE* file, uint16_t value) {
++    const unsigned char bytes[2] = {
++        static_cast<unsigned char>(value & 0xFF),
++        static_cast<unsigned char>((value >> 8) & 0xFF),
++    };
++    return Mk64WriteAll(file, bytes, sizeof(bytes));
++}
++
++bool Mk64WriteU32(FILE* file, uint32_t value) {
++    const unsigned char bytes[4] = {
++        static_cast<unsigned char>(value & 0xFF),
++        static_cast<unsigned char>((value >> 8) & 0xFF),
++        static_cast<unsigned char>((value >> 16) & 0xFF),
++        static_cast<unsigned char>((value >> 24) & 0xFF),
++    };
++    return Mk64WriteAll(file, bytes, sizeof(bytes));
++}
++
++bool Mk64DeflateToFile(FILE* file, const std::vector<char>& data, uint32_t* compressedSize) {
++    if (file == nullptr || compressedSize == nullptr || data.empty() || data.size() > UINT32_MAX) {
++        errno = EINVAL;
++        return false;
++    }
++
++    mz_stream stream = {};
++    int status = mz_deflateInit2(&stream, MZ_BEST_SPEED, MZ_DEFLATED,
++                                 -MZ_DEFAULT_WINDOW_BITS, 9, MZ_DEFAULT_STRATEGY);
++    if (status != MZ_OK) {
++        errno = status == MZ_MEM_ERROR ? ENOMEM : EIO;
++        return false;
++    }
++
++    stream.next_in = reinterpret_cast<const unsigned char*>(data.data());
++    stream.avail_in = static_cast<unsigned int>(data.size());
++    unsigned char output[kMk64ZipDeflateChunkSize];
++    bool ok = true;
++    int failureErrno = 0;
++    while (status != MZ_STREAM_END) { if(Mk64Extraction3DSShouldCancel()) { failureErrno = ECANCELED; ok = false; break; }
++        stream.next_out = output;
++        stream.avail_out = sizeof(output);
++        const int flush = stream.avail_in == 0 ? MZ_FINISH : MZ_NO_FLUSH;
++        status = mz_deflate(&stream, flush);
++        if (status != MZ_OK && status != MZ_STREAM_END) {
++            failureErrno = status == MZ_MEM_ERROR ? ENOMEM : EIO;
++            ok = false;
++            break;
++        }
++        const size_t produced = sizeof(output) - stream.avail_out;
++        if (produced != 0 && !Mk64WriteAll(file, output, produced)) {
++            failureErrno = errno != 0 ? errno : EIO;
++            ok = false;
++            break;
++        }
++    }
++
++    const mz_ulong totalOut = stream.total_out;
++    const int endStatus = mz_deflateEnd(&stream);
++    if (!ok || endStatus != MZ_OK || totalOut > UINT32_MAX) {
++        errno = failureErrno != 0 ? failureErrno : (endStatus == MZ_MEM_ERROR ? ENOMEM : EIO);
++        return false;
++    }
++    *compressedSize = static_cast<uint32_t>(totalOut);
++    return true;
++}
++
++bool Mk64AppendFile(FILE* output, FILE* input, uint64_t* bytesWritten) {
++    if (output == nullptr || input == nullptr) {
++        errno = EBADF;
++        return false;
++    }
++    errno = 0;
++    if (std::fseek(input, 0, SEEK_SET) != 0) {
++        if (errno == 0) errno = EIO;
++        return false;
++    }
++    unsigned char buffer[kMk64ZipWriteChunkSize];
++    while (true) { if(Mk64Extraction3DSShouldCancel()) { errno = ECANCELED; return false; }
++        const size_t read = std::fread(buffer, 1, sizeof(buffer), input);
++        if (read > 0) {
++            if (!Mk64WriteAll(output, buffer, read)) {
++                return false;
++            }
++            if (bytesWritten != nullptr) {
++                *bytesWritten += read;
++            }
++        }
++        if (read < sizeof(buffer)) {
++            if (std::ferror(input) != 0) {
++                errno = EIO;
++                return false;
++            }
++            return true;
++        }
++    }
++}
++}
++#endif
+ #include <miniz/zip_file.hpp>
+ 
+ namespace fs = std::filesystem;
+ 
+ ZWrapper::ZWrapper(const std::string& path) {
+     this->mPath = path;
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    this->mArchiveFile = nullptr;
++    this->mCentralDirectoryFile = nullptr;
++    this->mCentralDirectoryPath = path + ".cd";
++    this->mArchiveOpen = false;
++    this->mEntriesWritten = 0;
++    this->mPayloadBytesWritten = 0;
++    this->mArchiveBytesWritten = 0;
++    this->mCentralDirectoryBytesWritten = 0;
++#else
+     this->mZip = new miniz_cpp::zip_file;
++#endif
++}
++
++ZWrapper::~ZWrapper() {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    const int savedErrno = errno;
++    const bool aborted = this->mArchiveOpen;
++    if(this->mCentralDirectoryFile != nullptr) {
++        std::fclose(this->mCentralDirectoryFile);
++        this->mCentralDirectoryFile = nullptr;
++    }
++    if(this->mArchiveFile != nullptr) {
++        std::fflush(this->mArchiveFile);
++        std::fclose(this->mArchiveFile);
++        this->mArchiveFile = nullptr;
++    }
++    if(!this->mCentralDirectoryPath.empty()) {
++        std::remove(this->mCentralDirectoryPath.c_str());
++    }
++    this->mArchiveOpen = false;
++    if(aborted) { std::remove(this->mPath.c_str());
++        char message[192] = {};
++        std::snprintf(message, sizeof(message),
++                      "O2R writer aborted cleanly after %lu entries and %llu payload bytes.",
++                      static_cast<unsigned long>(this->mEntriesWritten),
++                      static_cast<unsigned long long>(this->mPayloadBytesWritten));
++        Mk64InstallLogWrite(message);
++    }
++    errno = savedErrno;
++#else
++    delete this->mZip;
++    this->mZip = nullptr;
++#endif
+ }
+ 
+ int32_t ZWrapper::CreateArchive() {
+     SPDLOG_INFO("Loaded ZIP (O2R) archive: {}", mPath.c_str());
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    if(fs::exists(mPath)) {
++        fs::remove(mPath);
++    }
++    if(fs::exists(mCentralDirectoryPath)) {
++        fs::remove(mCentralDirectoryPath);
++    }
++    this->mArchiveFile = std::fopen(mPath.c_str(), "wb");
++    if(this->mArchiveFile == nullptr) {
++        throw std::runtime_error("Could not open the temporary O2R archive on the SD card");
++    }
++    this->mCentralDirectoryFile = std::fopen(mCentralDirectoryPath.c_str(), "wb+");
++    if(this->mCentralDirectoryFile == nullptr) {
++        std::fclose(this->mArchiveFile);
++        this->mArchiveFile = nullptr;
++        throw std::runtime_error("Could not open the temporary O2R central directory on the SD card");
++    }
++    // Buffers belong to this writer and remain alive through fclose. If the
++    // library declines buffering, keep its valid default rather than fail.
++    std::setvbuf(this->mArchiveFile, this->mArchiveBuffer, _IOFBF, sizeof(this->mArchiveBuffer));
++    std::setvbuf(this->mCentralDirectoryFile, this->mDirectoryBuffer, _IOFBF, sizeof(this->mDirectoryBuffer));
++    this->mArchiveOpen = true;
++    Mk64InstallLogWrite("O2R writer opened with SD-spooled ZIP central directory.");
++#endif
+     return 0;
+ }
+ 
+-bool ZWrapper::AddFile(const std::string& path, std::vector<char> data) {
++bool ZWrapper::AddFile(const std::string& path, std::vector<char>&& data) {
+     char* fileData = data.data();
+     size_t fileSize = data.size();
+ 
+@@ -34,11 +234,155 @@ bool ZWrapper::AddFile(const std::string& path, std::vector<char> data) {
+         stream.close();
+     }
+ 
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    if(!this->mArchiveOpen) {
++        throw std::runtime_error("The O2R archive is not open");
++    }
++    if(path.size() > 0xFFFF || data.size() > 0xFFFFFFFFULL || this->mArchiveBytesWritten > 0xFFFFFFFFULL) {
++        throw std::runtime_error("The generated O2R archive exceeded the 3DS ZIP32 writer limit");
++    }
++
++    const uint32_t crc = static_cast<uint32_t>(mz_crc32(MZ_CRC32_INIT, reinterpret_cast<const unsigned char*>(data.data()),
++                                                       data.size()));
++    const uint32_t zipFileSize = static_cast<uint32_t>(data.size());
++    // Avoid a complete Deflate allocation/initialization for tiny resources.
++    // ZIP STORED is already supported by the indexed runtime and validator.
++    const bool useDeflate = data.size() >= 256;
++    const uint16_t zipFlags = useDeflate ? kMk64ZipDataDescriptorFlag : 0;
++    const uint16_t zipMethod = useDeflate ? kMk64ZipMethodDeflate : kMk64ZipMethodStored;
++    uint32_t compressedSize = useDeflate ? 0 : zipFileSize;
++    const uint16_t nameSize = static_cast<uint16_t>(path.size());
++    const uint32_t localHeaderOffset = static_cast<uint32_t>(this->mArchiveBytesWritten);
++
++    bool ok = true;
++    ok = ok && Mk64WriteU32(this->mArchiveFile, 0x04034b50);
++    ok = ok && Mk64WriteU16(this->mArchiveFile, 20);
++    ok = ok && Mk64WriteU16(this->mArchiveFile, zipFlags);
++    ok = ok && Mk64WriteU16(this->mArchiveFile, zipMethod);
++    ok = ok && Mk64WriteU16(this->mArchiveFile, 0);
++    ok = ok && Mk64WriteU16(this->mArchiveFile, 0);
++    ok = ok && Mk64WriteU32(this->mArchiveFile, useDeflate ? 0 : crc);
++    ok = ok && Mk64WriteU32(this->mArchiveFile, useDeflate ? 0 : compressedSize);
++    ok = ok && Mk64WriteU32(this->mArchiveFile, useDeflate ? 0 : zipFileSize);
++    ok = ok && Mk64WriteU16(this->mArchiveFile, nameSize);
++    ok = ok && Mk64WriteU16(this->mArchiveFile, 0);
++    ok = ok && Mk64WriteAll(this->mArchiveFile, path.data(), path.size());
++    if (useDeflate) {
++        ok = ok && Mk64DeflateToFile(this->mArchiveFile, data, &compressedSize);
++        ok = ok && Mk64WriteU32(this->mArchiveFile, 0x08074b50);
++        ok = ok && Mk64WriteU32(this->mArchiveFile, crc);
++        ok = ok && Mk64WriteU32(this->mArchiveFile, compressedSize);
++        ok = ok && Mk64WriteU32(this->mArchiveFile, zipFileSize);
++    } else {
++        ok = ok && Mk64WriteAll(this->mArchiveFile, data.data(), data.size());
++    }
++
++    ok = ok && Mk64WriteU32(this->mCentralDirectoryFile, 0x02014b50);
++    ok = ok && Mk64WriteU16(this->mCentralDirectoryFile, 20);
++    ok = ok && Mk64WriteU16(this->mCentralDirectoryFile, 20);
++    ok = ok && Mk64WriteU16(this->mCentralDirectoryFile, zipFlags);
++    ok = ok && Mk64WriteU16(this->mCentralDirectoryFile, zipMethod);
++    ok = ok && Mk64WriteU16(this->mCentralDirectoryFile, 0);
++    ok = ok && Mk64WriteU16(this->mCentralDirectoryFile, 0);
++    ok = ok && Mk64WriteU32(this->mCentralDirectoryFile, crc);
++    ok = ok && Mk64WriteU32(this->mCentralDirectoryFile, compressedSize);
++    ok = ok && Mk64WriteU32(this->mCentralDirectoryFile, zipFileSize);
++    ok = ok && Mk64WriteU16(this->mCentralDirectoryFile, nameSize);
++    ok = ok && Mk64WriteU16(this->mCentralDirectoryFile, 0);
++    ok = ok && Mk64WriteU16(this->mCentralDirectoryFile, 0);
++    ok = ok && Mk64WriteU16(this->mCentralDirectoryFile, 0);
++    ok = ok && Mk64WriteU16(this->mCentralDirectoryFile, 0);
++    ok = ok && Mk64WriteU32(this->mCentralDirectoryFile, 0);
++    ok = ok && Mk64WriteU32(this->mCentralDirectoryFile, localHeaderOffset);
++    ok = ok && Mk64WriteAll(this->mCentralDirectoryFile, path.data(), path.size());
++
++    if(!ok) {
++        char message[256] = {};
++        std::snprintf(message, sizeof(message), "Could not write extracted file %s to the O2R archive (errno=%d)",
++                      path.c_str(), errno);
++        Mk64InstallLogWrite(message);
++        throw std::runtime_error(message);
++    }
++    ++this->mEntriesWritten;
++    this->mPayloadBytesWritten += data.size();
++    this->mArchiveBytesWritten += 30 + path.size() + compressedSize + (useDeflate ? 16 : 0);
++    this->mCentralDirectoryBytesWritten += 46 + path.size();
++    if((this->mEntriesWritten % 100) == 0) {
++        char message[192] = {};
++        std::snprintf(message, sizeof(message), "O2R progress: %lu entries, %llu payload bytes.",
++                      static_cast<unsigned long>(this->mEntriesWritten),
++                      static_cast<unsigned long long>(this->mPayloadBytesWritten));
++        Mk64InstallLogWrite(message);
++    }
++#else
+     this->mZip->writebytes(path, data);
++#endif
+     return true;
+ }
+ 
+ int32_t ZWrapper::Close(void) {
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    if(!this->mArchiveOpen) {
++        return -1;
++    }
++    bool ok = true;
++    int closeError = 0;
++    const uint64_t centralDirectoryOffset = this->mArchiveBytesWritten;
++    ok = ok && std::fflush(this->mCentralDirectoryFile) == 0;
++    ok = ok && Mk64AppendFile(this->mArchiveFile, this->mCentralDirectoryFile, &this->mArchiveBytesWritten);
++    ok = ok && Mk64WriteU32(this->mArchiveFile, 0x06054b50);
++    ok = ok && Mk64WriteU16(this->mArchiveFile, 0);
++    ok = ok && Mk64WriteU16(this->mArchiveFile, 0);
++    ok = ok && Mk64WriteU16(this->mArchiveFile, static_cast<uint16_t>(this->mEntriesWritten));
++    ok = ok && Mk64WriteU16(this->mArchiveFile, static_cast<uint16_t>(this->mEntriesWritten));
++    ok = ok && Mk64WriteU32(this->mArchiveFile, static_cast<uint32_t>(this->mCentralDirectoryBytesWritten));
++    ok = ok && Mk64WriteU32(this->mArchiveFile, static_cast<uint32_t>(centralDirectoryOffset));
++    ok = ok && Mk64WriteU16(this->mArchiveFile, 0);
++    this->mArchiveBytesWritten += 22;
++
++    if(this->mCentralDirectoryFile != nullptr) {
++        std::fclose(this->mCentralDirectoryFile);
++        this->mCentralDirectoryFile = nullptr;
++    }
++    if(this->mArchiveFile != nullptr) {
++        errno = 0;
++        const bool flushed = std::fflush(this->mArchiveFile) == 0;
++        if(!flushed) closeError = errno != 0 ? errno : EIO;
++        errno = 0;
++        const bool closed = std::fclose(this->mArchiveFile) == 0;
++        if(!closed && closeError == 0) closeError = errno != 0 ? errno : EIO;
++        this->mArchiveFile = nullptr;
++    }
++    // The archive is already fully flushed and closed. Failure to remove the
++    // private central-directory spool must not turn a valid extraction into a
++    // false failure (for example after a transient FAT cleanup error).
++    std::error_code cleanupError;
++    fs::remove(this->mCentralDirectoryPath, cleanupError);
++    if(cleanupError) {
++        char cleanupMessage[256] = {};
++        std::snprintf(cleanupMessage, sizeof(cleanupMessage),
++                      "O2R finalized, but its temporary central-directory spool could not be removed (%d).",
++                      cleanupError.value());
++        Mk64InstallLogWrite(cleanupMessage);
++    }
++    this->mArchiveOpen = false;
++    if(!ok || closeError != 0) {
++        char message[320] = {};
++        std::snprintf(message, sizeof(message),
++                      "Could not finalize the O2R archive on the SD card (entries=%lu bytes=%llu cd_bytes=%llu errno=%d close_errno=%d)",
++                      static_cast<unsigned long>(this->mEntriesWritten),
++                      static_cast<unsigned long long>(this->mArchiveBytesWritten),
++                      static_cast<unsigned long long>(this->mCentralDirectoryBytesWritten), errno, closeError);
++        Mk64InstallLogWrite(message);
++        throw std::runtime_error(message);
++    }
++    char message[192] = {};
++    std::snprintf(message, sizeof(message), "O2R finalized: %lu entries, %llu archive bytes.",
++                  static_cast<unsigned long>(this->mEntriesWritten),
++                  static_cast<unsigned long long>(this->mArchiveBytesWritten));
++    Mk64InstallLogWrite(message);
++#else
+     this->mZip->save(this->mPath);
++#endif
+     return 0;
+ }
+diff --git a/src/archive/ZWrapper.h b/src/archive/ZWrapper.h
+index d1fe867..2b95d70 100644
+--- a/src/archive/ZWrapper.h
++++ b/src/archive/ZWrapper.h
+@@ -1,20 +1,39 @@
+ #pragma once
+ 
++#include <cstdint>
+ #include <vector>
+ #include <string>
+ #include "BinaryWrapper.h"
+ 
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++#include <cstdio>
++#else
+ namespace miniz_cpp {
+ class zip_file;
+ }
++#endif
+ 
+ class ZWrapper : public BinaryWrapper {
+ public:
+     explicit ZWrapper(const std::string& path);
++    ~ZWrapper() override;
+ 
+     int32_t CreateArchive(void) override;
+-    bool AddFile(const std::string& path, std::vector<char> data) override;
++    bool AddFile(const std::string& path, std::vector<char>&& data) override;
+     int32_t Close(void) override;
+ 
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    char mArchiveBuffer[64 * 1024];
++    char mDirectoryBuffer[16 * 1024];
++    FILE* mArchiveFile;
++    FILE* mCentralDirectoryFile;
++    std::string mCentralDirectoryPath;
++    bool mArchiveOpen;
++    uint32_t mEntriesWritten;
++    uint64_t mPayloadBytesWritten;
++    uint64_t mArchiveBytesWritten;
++    uint64_t mCentralDirectoryBytesWritten;
++#else
+     miniz_cpp::zip_file* mZip;
++#endif
+ };
+diff --git a/src/factories/TextureFactory.cpp b/src/factories/TextureFactory.cpp
+index 8e9d53c..9a0d294 100644
+--- a/src/factories/TextureFactory.cpp
++++ b/src/factories/TextureFactory.cpp
+@@ -172,7 +172,7 @@ ExportResult TextureCodeExporter::Export(std::ostream &write, std::shared_ptr<IP
+ ExportResult TextureBinaryExporter::Export(std::ostream &write, std::shared_ptr<IParsedData> raw, std::string& entryName, YAML::Node &node, std::string* replacement) {
+     auto writer = LUS::BinaryWriter();
+     auto texture = std::static_pointer_cast<TextureData>(raw);
+-    auto data = texture->mBuffer;
++    const auto& data = texture->mBuffer;
+ 
+     WriteHeader(writer, Torch::ResourceType::Texture, 0);
+ 
+diff --git a/src/factories/naudio/v0/AudioManager.cpp b/src/factories/naudio/v0/AudioManager.cpp
+index 1e7fc9a..782b5dc 100644
+--- a/src/factories/naudio/v0/AudioManager.cpp
++++ b/src/factories/naudio/v0/AudioManager.cpp
+@@ -18,6 +18,32 @@ std::unordered_map<std::string, uint32_t> name_table;
+ std::unordered_map<uint32_t, std::string> sample_table;
+ AudioManager* AudioManager::Instance;
+ 
++AudioManager::~AudioManager() noexcept {
++    // Every SampleBank owns the unique samples in its entries map. Walk those
++    // owners directly: building a temporary set here could allocate and call
++    // std::terminate if cleanup is running because the heap is exhausted.
++    for (auto* bank : this->loaded_tbl.banks) {
++        if (bank == nullptr) {
++            continue;
++        }
++        for (const auto& [offset, sample] : bank->entries) {
++            (void)offset;
++            delete sample;
++        }
++    }
++
++    this->sampleMap.clear();
++    this->banks.clear();
++    for (auto* bank : this->loaded_tbl.banks) {
++        delete bank;
++    }
++    this->loaded_tbl.banks.clear();
++    this->loaded_tbl.tbls.clear();
++    this->loaded_tbl.map.clear();
++    name_table.clear();
++    sample_table.clear();
++}
++
+ std::vector<uint32_t> PyUtils::range(uint32_t start, uint32_t end) {
+     std::vector<uint32_t> result;
+     for (uint32_t i = start; i < end; ++i) {
+@@ -560,4 +586,4 @@ std::vector<AudioBankSample*> AudioManager::get_samples() {
+         }
+     }
+     return samples;
+-}
+\ No newline at end of file
++}
+diff --git a/src/factories/naudio/v0/AudioManager.h b/src/factories/naudio/v0/AudioManager.h
+index 6f4a880..6ee20b8 100644
+--- a/src/factories/naudio/v0/AudioManager.h
++++ b/src/factories/naudio/v0/AudioManager.h
+@@ -124,6 +124,7 @@ struct Bank {
+ class AudioManager {
+ public:
+     static AudioManager* Instance;
++    ~AudioManager() noexcept;
+     void initialize(std::vector<uint8_t>& buffer, YAML::Node& data);
+     void bind_sample(YAML::Node& node, const std::string& path);
+     std::string& get_sample(uint32_t id);
+@@ -148,4 +149,4 @@ private:
+     static std::vector<AdsrEnvelope> parse_envelope(uint32_t addr, std::vector<uint8_t>& dataBank);
+     static Bank parse_ctl(CTLHeader header, std::vector<uint8_t> data, SampleBank* bank, uint32_t index);
+     static TBLFile parse_tbl(std::vector<uint8_t>& data, std::vector<Entry>& entries);
+-};
+\ No newline at end of file
++};
+diff --git a/src/factories/naudio/v1/AudioContext.cpp b/src/factories/naudio/v1/AudioContext.cpp
+index f2b0dd0..1411eae 100644
+--- a/src/factories/naudio/v1/AudioContext.cpp
++++ b/src/factories/naudio/v1/AudioContext.cpp
+@@ -6,6 +6,14 @@
+ std::unordered_map<AudioTableType, TableEntry> AudioContext::tables;
+ NAudioDrivers AudioContext::driver = NAudioDrivers::UNKNOWN;
+ 
++void AudioContext::Reset() noexcept {
++    // Swapping with an empty container releases owned audio buffers without a
++    // rehash allocation, which is critical on low-memory exception paths.
++    decltype(AudioContext::tables) emptyTables;
++    AudioContext::tables.swap(emptyTables);
++    AudioContext::driver = NAudioDrivers::UNKNOWN;
++}
++
+ std::optional<std::shared_ptr<IParsedData>> AudioContextFactory::parse(std::vector<uint8_t>& buffer, YAML::Node& node) {
+     auto driver = GetSafeNode<std::string>(node, "driver");
+ 
+@@ -45,7 +53,9 @@ std::optional<std::shared_ptr<IParsedData>> AudioContextFactory::parse(std::vect
+ }
+ 
+ LUS::BinaryReader AudioContext::MakeReader(AudioTableType type, uint32_t offset) {
+-    auto entry = AudioContext::tables[type].buffer;
++    // BinaryReader borrows its input on 3DS. Keep that input in the persistent
++    // table entry instead of returning a reader that points into a local copy.
++    auto& entry = AudioContext::tables[type].buffer;
+ 
+     LUS::BinaryReader reader(entry.data(), entry.size());
+     reader.SetEndianness(Torch::Endianness::Big);
+@@ -146,4 +156,4 @@ const char* AudioContext::GetCodecStr(uint8_t codec) {
+         default:
+             return "ERROR";
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/factories/naudio/v1/AudioContext.h b/src/factories/naudio/v1/AudioContext.h
+index 415d1f1..b7555ce 100644
+--- a/src/factories/naudio/v1/AudioContext.h
++++ b/src/factories/naudio/v1/AudioContext.h
+@@ -26,6 +26,7 @@ public:
+     static std::unordered_map<AudioTableType, TableEntry> tables;
+     static NAudioDrivers driver;
+ 
++    static void Reset() noexcept;
+     static LUS::BinaryReader MakeReader(AudioTableType type, uint32_t offset);
+     static TunedSample LoadTunedSample(LUS::BinaryReader& reader, uint32_t parent, uint32_t sampleBankId);
+     static uint64_t GetPathByAddr(uint32_t addr);
+@@ -48,4 +49,4 @@ public:
+     }
+ 
+     bool HasModdedDependencies() override { return true; }
+-};
+\ No newline at end of file
++};
+diff --git a/src/factories/naudio/v1/AudioConverter.cpp b/src/factories/naudio/v1/AudioConverter.cpp
+index 7c4ebb4..540ddb0 100644
+--- a/src/factories/naudio/v1/AudioConverter.cpp
++++ b/src/factories/naudio/v1/AudioConverter.cpp
+@@ -168,7 +168,7 @@ void AudioConverter::SampleV0ToAIFC(AudioBankSample* sample, LUS::BinaryWriter &
+ void AudioConverter::SampleV1ToAIFC(NSampleData* sample, LUS::BinaryWriter &out) {
+     auto loop = std::static_pointer_cast<ADPCMLoopData>(Companion::Instance->GetParseDataByAddr(sample->loop)->data.value());
+     auto book = std::static_pointer_cast<ADPCMBookData>(Companion::Instance->GetParseDataByAddr(sample->book)->data.value());
+-    auto entry = AudioContext::tables[AudioTableType::SAMPLE_TABLE];
++    const auto& entry = AudioContext::tables[AudioTableType::SAMPLE_TABLE];
+     auto sampleData = entry.buffer.data() + entry.info->entries[sample->sampleBankId].addr + sample->sampleAddr;
+     auto aifc = AIFCWriter();
+     std::vector<uint8_t> data(sampleData, sampleData + sample->size);
+@@ -235,4 +235,4 @@ void AudioConverter::SampleV1ToAIFC(NSampleData* sample, LUS::BinaryWriter &out)
+     }
+ 
+     aifc.Close(out);
+-}
+\ No newline at end of file
++}
+diff --git a/src/factories/naudio/v1/SampleFactory.cpp b/src/factories/naudio/v1/SampleFactory.cpp
+index 616d883..7aefcac 100644
+--- a/src/factories/naudio/v1/SampleFactory.cpp
++++ b/src/factories/naudio/v1/SampleFactory.cpp
+@@ -37,7 +37,7 @@ ExportResult NSampleBinaryExporter::Export(std::ostream &write, std::shared_ptr<
+     writer.Write(AudioContext::GetPathByAddr(data->loop));
+     writer.Write(AudioContext::GetPathByAddr(data->book));
+ 
+-    auto table = AudioContext::tables[AudioTableType::SAMPLE_TABLE];
++    const auto& table = AudioContext::tables[AudioTableType::SAMPLE_TABLE];
+     writer.Write((char*) table.buffer.data() + table.info->entries[data->sampleBankId].addr + data->sampleAddr, data->size);
+ 
+     writer.Finish(write);
+@@ -51,7 +51,7 @@ ExportResult NSampleModdingExporter::Export(std::ostream &write, std::shared_ptr
+ #ifdef SF64_SUPPORT
+     if(AudioContext::driver == NAudioDrivers::SF64 && data->codec == 2) {
+         *replacement += ".pcm";
+-        auto table = AudioContext::tables[AudioTableType::SAMPLE_TABLE];
++        const auto& table = AudioContext::tables[AudioTableType::SAMPLE_TABLE];
+         auto ptr = table.buffer.data() + table.info->entries[data->sampleBankId].addr + data->sampleAddr;
+         auto vec = std::vector<uint8_t>(ptr, ptr + data->size);
+         auto output = new int16_t[data->size * 2];
+@@ -87,18 +87,18 @@ ExportResult NSampleXMLExporter::Export(std::ostream &write, std::shared_ptr<IPa
+     root->SetAttribute("Version", 0);
+     root->SetAttribute("Codec", AudioContext::GetCodecStr(entry->codec));
+     root->SetAttribute("Medium", AudioContext::GetMediumStr(entry->medium));
+-    root->SetAttribute("bit26", entry->unk);
++    root->SetAttribute("bit26", static_cast<unsigned int>(entry->unk));
+     root->SetAttribute("Tuning", entry->tuning);
+-    root->SetAttribute("Size", entry->size);
++    root->SetAttribute("Size", static_cast<unsigned int>(entry->size));
+     root->SetAttribute("Relocated", 0);
+     root->SetAttribute("Path", (path.string() + "_data").c_str());
+ 
+     if(entry->loop != 0) {
+         auto loop = std::static_pointer_cast<ADPCMLoopData>(Companion::Instance->GetParseDataByAddr(entry->loop)->data.value());
+         tinyxml2::XMLElement* adpcmLoop = sample.NewElement("ADPCMLoop");
+-        adpcmLoop->SetAttribute("Start", loop->start);
+-        adpcmLoop->SetAttribute("End", loop->end);
+-        adpcmLoop->SetAttribute("Count", loop->count);
++        adpcmLoop->SetAttribute("Start", static_cast<unsigned int>(loop->start));
++        adpcmLoop->SetAttribute("End", static_cast<unsigned int>(loop->end));
++        adpcmLoop->SetAttribute("Count", static_cast<unsigned int>(loop->count));
+         if (loop->count != 0) {
+             for (auto& state : loop->predictorState) {
+                 tinyxml2::XMLElement* loopEntry = adpcmLoop->InsertNewChildElement("Predictor");
+@@ -112,8 +112,8 @@ ExportResult NSampleXMLExporter::Export(std::ostream &write, std::shared_ptr<IPa
+     if(entry->book != 0) {
+         auto book = std::static_pointer_cast<ADPCMBookData>(Companion::Instance->GetParseDataByAddr(entry->book)->data.value());
+         tinyxml2::XMLElement* adpcmBook = sample.NewElement("ADPCMBook");
+-        adpcmBook->SetAttribute("Order", book->order);
+-        adpcmBook->SetAttribute("Npredictors", book->numPredictors);
++        adpcmBook->SetAttribute("Order", static_cast<int>(book->order));
++        adpcmBook->SetAttribute("Npredictors", static_cast<int>(book->numPredictors));
+ 
+         for (auto& page : book->book) {
+             tinyxml2::XMLElement* bookEntry = adpcmBook->InsertNewChildElement("Book");
+@@ -128,7 +128,7 @@ ExportResult NSampleXMLExporter::Export(std::ostream &write, std::shared_ptr<IPa
+     sample.Accept(&printer);
+     write.write(printer.CStr(), printer.CStrSize() - 1);
+ 
+-    auto table = AudioContext::tables[AudioTableType::SAMPLE_TABLE];
++    const auto& table = AudioContext::tables[AudioTableType::SAMPLE_TABLE];
+     auto sampleData = table.buffer.data() + table.info->entries[entry->sampleBankId].addr + entry->sampleAddr;
+     std::vector<char> data(sampleData, sampleData + entry->size);
+     Companion::Instance->RegisterCompanionFile(path.filename().string() + "_data", data);
+diff --git a/src/factories/naudio/v1/SoundFontFactory.cpp b/src/factories/naudio/v1/SoundFontFactory.cpp
+index cd00123..7925b06 100644
+--- a/src/factories/naudio/v1/SoundFontFactory.cpp
++++ b/src/factories/naudio/v1/SoundFontFactory.cpp
+@@ -111,7 +111,7 @@ void WriteDrum(tinyxml2::XMLElement* parent, uint32_t offset){
+     root->SetAttribute("Tuning", sample.tuning);
+ 
+     tinyxml2::XMLElement* envelopes = root->InsertNewChildElement("Envelopes");
+-    envelopes->SetAttribute("Count", (uint32_t) envelopeData->points.size());
++    envelopes->SetAttribute("Count", static_cast<unsigned int>(envelopeData->points.size()));
+     for(size_t i = 0; i < envelopeData->points.size(); i++){
+         auto point = envelopeData->points[i];
+         tinyxml2::XMLElement* pointEntry = envelopes->InsertNewChildElement("Envelope");
+@@ -135,7 +135,7 @@ ExportResult SoundFontXMLExporter::Export(std::ostream &write, std::shared_ptr<I
+     tinyxml2::XMLDocument doc;
+     tinyxml2::XMLElement* root = doc.NewElement("SoundFont");
+     root->SetAttribute("Version", 0);
+-    root->SetAttribute("Num", id);
++    root->SetAttribute("Num", static_cast<unsigned int>(id));
+     root->SetAttribute("Medium", AudioContext::GetMediumStr(medium));
+     root->SetAttribute("CachePolicy", AudioContext::GetCachePolicyStr(policy));
+     root->SetAttribute("Data1", sd1);
+@@ -143,7 +143,7 @@ ExportResult SoundFontXMLExporter::Export(std::ostream &write, std::shared_ptr<I
+     root->SetAttribute("Data3", sd3);
+ 
+     tinyxml2::XMLElement* drums = doc.NewElement("Drums");
+-    drums->SetAttribute("Count", font->numDrums);
++    drums->SetAttribute("Count", static_cast<unsigned int>(font->numDrums));
+ 
+     for(auto& drum : font->drums){
+         if(drum == 0){
+@@ -154,7 +154,7 @@ ExportResult SoundFontXMLExporter::Export(std::ostream &write, std::shared_ptr<I
+     root->InsertEndChild(drums);
+ 
+     tinyxml2::XMLElement* insts = doc.NewElement("Instruments");
+-    insts->SetAttribute("Count", font->numInstruments);
++    insts->SetAttribute("Count", static_cast<unsigned int>(font->numInstruments));
+ 
+     for(auto& inst : font->instruments){
+         if(inst == 0){
+diff --git a/src/n64/Cartridge.cpp b/src/n64/Cartridge.cpp
+index f3c1f83..2784870 100644
+--- a/src/n64/Cartridge.cpp
++++ b/src/n64/Cartridge.cpp
+@@ -3,8 +3,28 @@
+ #include "lib/binarytools/BinaryReader.h"
+ #include <Companion.h>
+ 
++#include <stdexcept>
++
+ void N64::Cartridge::Initialize() {
+-    LUS::BinaryReader reader((char*) this->gRomData.data(), this->gRomData.size());
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    const std::vector<uint8_t>& romData = *this->gRomData;
++    if (romData.size() < 0x40) {
++        throw std::runtime_error("The ROM is too small to contain an N64 header.");
++    }
++
++    // BinaryReader owns a MemoryStream, and MemoryStream copies its complete
++    // input buffer. Avoid duplicating the 12 MiB MK64 ROM on memory-constrained
++    // 3DS systems just to read the fixed-size cartridge header.
++    this->gRomCRC = static_cast<uint32_t>(romData[0x10]) |
++                    (static_cast<uint32_t>(romData[0x11]) << 8) |
++                    (static_cast<uint32_t>(romData[0x12]) << 16) |
++                    (static_cast<uint32_t>(romData[0x13]) << 24);
++    this->gGameTitle.assign(reinterpret_cast<const char*>(romData.data() + 0x20), 20);
++    const uint8_t country = romData[0x3E];
++    this->gVersion = romData[0x3F];
++#else
++    const std::vector<uint8_t>& romData = this->gRomData;
++    LUS::BinaryReader reader((char*) romData.data(), romData.size());
+     reader.SetEndianness(Torch::Endianness::Big);
+     reader.Seek(0x10, LUS::SeekOffsetType::Start);
+     this->gRomCRC = BSWAP32(reader.ReadUInt32());
+@@ -14,7 +34,8 @@ void N64::Cartridge::Initialize() {
+     reader.Seek(0x3E, LUS::SeekOffsetType::Start);
+     uint8_t country = reader.ReadUByte();
+     this->gVersion = reader.ReadUByte();
+-    this->gHash = Companion::CalculateHash(this->gRomData);
++#endif
++    this->gHash = Companion::CalculateHash(romData);
+     switch (country) {
+         case 'J':
+             this->gCountryCode = CountryCode::Japan;
+@@ -29,7 +50,9 @@ void N64::Cartridge::Initialize() {
+             this->gCountryCode = CountryCode::Unknown;
+             break;
+     }
++#if !defined(__3DS__) && !defined(PLATFORM_3DS)
+     reader.Close();
++#endif
+ }
+ 
+ const std::string &N64::Cartridge::GetGameTitle() {
+diff --git a/src/n64/Cartridge.h b/src/n64/Cartridge.h
+index 4477a59..6992694 100644
+--- a/src/n64/Cartridge.h
++++ b/src/n64/Cartridge.h
+@@ -15,7 +15,13 @@ enum class CountryCode {
+ class Cartridge {
+ public:
+     explicit Cartridge(const std::vector<uint8_t>& romData)
+-      : gRomData(romData), gCountryCode(CountryCode::Unknown), gVersion(0), gGameTitle("Unknown"), gRomCRC(0) {
++      :
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++        gRomData(&romData),
++#else
++        gRomData(romData),
++#endif
++        gCountryCode(CountryCode::Unknown), gVersion(0), gGameTitle("Unknown"), gRomCRC(0) {
+   }
+   void Initialize();
+     const std::string& GetGameTitle();
+@@ -25,11 +31,15 @@ public:
+     std::string GetHash();
+     uint32_t GetCRC();
+ private:
++#if defined(__3DS__) || defined(PLATFORM_3DS)
++    const std::vector<uint8_t>* gRomData;
++#else
+     std::vector<uint8_t> gRomData;
++#endif
+     CountryCode gCountryCode;
+     uint8_t gVersion;
+     std::string gGameTitle;
+     std::string gHash;
+     uint32_t gRomCRC;
+ };
+-}
+\ No newline at end of file
++}
+diff --git a/src/utils/Decompressor.cpp b/src/utils/Decompressor.cpp
+index dd24650..0f71ffc 100644
+--- a/src/utils/Decompressor.cpp
++++ b/src/utils/Decompressor.cpp
+@@ -1,5 +1,8 @@
+ #include "Decompressor.h"
+ 
++#include <cstdlib>
++#include <memory>
++#include <new>
+ #include <stdexcept>
+ #include "spdlog/spdlog.h"
+ #include <Companion.h>
+@@ -13,6 +16,47 @@ extern "C" {
+ 
+ std::unordered_map<uint32_t, DataChunk*> gCachedChunks;
+ 
++namespace {
++using MallocBuffer = std::unique_ptr<uint8_t, decltype(&std::free)>;
++
++MallocBuffer AllocateBuffer(const size_t size) {
++    auto* raw = static_cast<uint8_t*>(std::malloc(size));
++    if(raw == nullptr && size != 0) {
++        throw std::bad_alloc();
++    }
++    return MallocBuffer(raw, &std::free);
++}
++
++void DeleteCachedChunk(DataChunk* chunk) noexcept {
++    if(chunk == nullptr) {
++        return;
++    }
++    std::free(chunk->data);
++    delete chunk;
++}
++
++DataChunk* CacheChunk(const uint32_t offset, MallocBuffer data, const size_t size, const bool replace) {
++    auto chunk = std::make_unique<DataChunk>(DataChunk{ data.get(), size });
++
++    if(replace) {
++        const auto existing = gCachedChunks.find(offset);
++        if(existing != gCachedChunks.end()) {
++            DeleteCachedChunk(existing->second);
++            gCachedChunks.erase(existing);
++        }
++    }
++
++    const auto [entry, inserted] = gCachedChunks.emplace(offset, chunk.get());
++    if(!inserted) {
++        return entry->second;
++    }
++
++    data.release();
++    chunk.release();
++    return entry->second;
++}
++}
++
+ DataChunk* Decompressor::Decode(const std::vector<uint8_t>& buffer, const uint32_t offset, const CompressionType type, bool ignoreCache) {
+ 
+     if(!ignoreCache && gCachedChunks.contains(offset)){
+@@ -28,10 +72,11 @@ DataChunk* Decompressor::Decode(const std::vector<uint8_t>& buffer, const uint32
+                 throw std::runtime_error("Failed to decode MIO0 header");
+             }
+ 
+-            const auto decompressed = new uint8_t[head.dest_size];
+-            mio0_decode(in_buf, decompressed, nullptr);
+-            gCachedChunks[offset] = new DataChunk{ decompressed, head.dest_size };
+-            return gCachedChunks[offset];
++            auto decompressed = AllocateBuffer(head.dest_size);
++            if(mio0_decode(in_buf, decompressed.get(), nullptr) < 0) {
++                throw std::runtime_error("Failed to decode MIO0 data");
++            }
++            return CacheChunk(offset, std::move(decompressed), head.dest_size, ignoreCache);
+         }
+         case CompressionType::YAY0: {
+             uint32_t size = 0;
+@@ -41,8 +86,7 @@ DataChunk* Decompressor::Decode(const std::vector<uint8_t>& buffer, const uint32
+                 throw std::runtime_error("Failed to decode YAY0");
+             }
+ 
+-            gCachedChunks[offset] = new DataChunk{ decompressed, size };
+-            return gCachedChunks[offset];
++            return CacheChunk(offset, MallocBuffer(decompressed, &std::free), size, ignoreCache);
+         }
+         case CompressionType::YAY1: {
+             uint32_t size = 0;
+@@ -52,8 +96,7 @@ DataChunk* Decompressor::Decode(const std::vector<uint8_t>& buffer, const uint32
+                 throw std::runtime_error("Failed to decode YAY1");
+             }
+ 
+-            gCachedChunks[offset] = new DataChunk{ decompressed, size };
+-            return gCachedChunks[offset];
++            return CacheChunk(offset, MallocBuffer(decompressed, &std::free), size, ignoreCache);
+         }
+         default:
+             throw std::runtime_error("Unknown compression type");
+@@ -67,11 +110,10 @@ DataChunk* Decompressor::DecodeTKMK00(const std::vector<uint8_t>& buffer, const
+ 
+     const uint8_t* in_buf = buffer.data() + offset;
+ 
+-    const auto decompressed = new uint8_t[size];
+-    const auto rgba = new uint8_t[size];
+-    tkmk00_decode(in_buf, decompressed, rgba, alpha);
+-    gCachedChunks[offset] = new DataChunk{ rgba, size };
+-    return gCachedChunks[offset];
++    auto decompressed = AllocateBuffer(size);
++    auto rgba = AllocateBuffer(size);
++    tkmk00_decode(in_buf, decompressed.get(), rgba.get(), alpha);
++    return CacheChunk(offset, std::move(rgba), size, false);
+ }
+ 
+ DecompressedData Decompressor::AutoDecode(YAML::Node& node, std::vector<uint8_t>& buffer, std::optional<size_t> manualSize) {
+@@ -123,8 +165,9 @@ DecompressedData Decompressor::AutoDecode(YAML::Node& node, std::vector<uint8_t>
+             offset = ASSET_PTR(offset);
+ 
+             auto decoded = Decode(buffer, fileOffset, type);
+-            auto availableSize = decoded->size - offset;
+-            auto size = node["size"] ? node["size"].as<size_t>() : std::min(manualSize.value_or(availableSize), availableSize);
++            const size_t availableSize = decoded->size - offset;
++            const size_t size =
++                node["size"] ? node["size"].as<size_t>() : std::min(manualSize.value_or(availableSize), availableSize);
+             return {
+                 .root = decoded,
+                 .segment = { decoded->data + offset, size }
+@@ -136,8 +179,9 @@ DecompressedData Decompressor::AutoDecode(YAML::Node& node, std::vector<uint8_t>
+         {
+             fileOffset = TranslateAddr(offset, false);
+ 
+-            auto availableSize = buffer.size() - fileOffset;
+-            auto size = node["size"] ? node["size"].as<size_t>() : std::min(manualSize.value_or(availableSize), availableSize);
++            const size_t availableSize = buffer.size() - fileOffset;
++            const size_t size =
++                node["size"] ? node["size"].as<size_t>() : std::min(manualSize.value_or(availableSize), availableSize);
+ 
+             return {
+                 .root = nullptr,
+@@ -224,7 +268,8 @@ bool Decompressor::IsSegmented(uint32_t addr) {
+ 
+ void Decompressor::ClearCache() {
+     for(auto& [key, value] : gCachedChunks){
+-        delete[] value->data;
++        (void)key;
++        DeleteCachedChunk(value);
+     }
+     gCachedChunks.clear();
+-}
+\ No newline at end of file
++}

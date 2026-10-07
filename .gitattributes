@@ -1,0 +1,8 @@
+platform/3ds/patches/*.patch whitespace=-trailing-space
+# Preserve the exact upstream patch payloads and their published checksums.
+platform/3ds/update-dependencies/*.patch whitespace=-trailing-space
+# Preserve reference snapshot bytes (including CRLF); do not rewrite upstream
+# formatting just to import a historical vendor tree as an initial commit.
+experiments/native/vendor/** -text whitespace=-trailing-space,-blank-at-eof,-space-before-tab
+# These generated-adaptation modules retain their verified EOF spacing.
+platform/3ds/cmake/*.cmake whitespace=-blank-at-eof

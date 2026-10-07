@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+VERSION="$(tr -d '\r\n' < "${ROOT}/platform/3ds/version.txt")"
+DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+BUILD="${MK64_3DS_BUILD_DIR:-${ROOT}/build-3ds/game}"
+TOOLS_ROOT="${MK64_3DS_TOOLS_ROOT:-${ROOT}/../Tools/bin}"
+MAKEROM="${MAKEROM:-${TOOLS_ROOT}/makerom}"
+BANNERTOOL="${BANNERTOOL:-${TOOLS_ROOT}/bannertool}"
+TORCH_DIR="${ROOT}/third_party/SpaghettiKart/torch"
+TORCH_PATCH="${ROOT}/platform/3ds/patches/torch-3ds-devkitarm.patch"
+
+if [[ ! -x "${MAKEROM}" ]] && command -v makerom >/dev/null 2>&1; then
+  MAKEROM="$(command -v makerom)"
+fi
+if [[ ! -x "${BANNERTOOL}" ]] && command -v bannertool >/dev/null 2>&1; then
+  BANNERTOOL="$(command -v bannertool)"
+fi
+if [[ ! -x "${MAKEROM}" && -x "${DEVKITPRO}/tools/bin/makerom" ]]; then
+  MAKEROM="${DEVKITPRO}/tools/bin/makerom"
+fi
+if [[ ! -x "${BANNERTOOL}" && -x "${DEVKITPRO}/tools/bin/bannertool" ]]; then
+  BANNERTOOL="${DEVKITPRO}/tools/bin/bannertool"
+fi
+
+if git -C "${TORCH_DIR}" apply --check "${TORCH_PATCH}" >/dev/null 2>&1; then
+  git -C "${TORCH_DIR}" apply "${TORCH_PATCH}"
+elif git -C "${TORCH_DIR}" apply --reverse --check "${TORCH_PATCH}" >/dev/null 2>&1; then
+  :
+else
+  printf 'Could not apply or verify the 3DS Torch compatibility patch.\n' >&2
+  exit 1
+fi
+
+cmake -S "${ROOT}" -B "${BUILD}" \
+  -DCMAKE_TOOLCHAIN_FILE="${DEVKITPRO}/cmake/3DS.cmake" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DMK64_3DS_BUILD_GAME_CORE=ON \
+  -DMK64_3DS_BUILD_GAME_ENGINE=ON \
+  -DMK64_3DS_ENABLE_O2R_READER=ON \
+  -DMK64_3DS_ENABLE_FAST3D_RENDERER=ON \
+  -DMK64_3DS_BUILD_RENDERER_PROBE=OFF \
+  -DMK64_3DS_BUILD_INTERPRETER_PROBE=ON "$@"
+cmake --build "${BUILD}" --target mk64-3ds-game-3dsx --parallel "${MK64_3DS_JOBS:-4}"
+
+# Publish the complete game, never the same-version interpreter/bootstrap probe.
+cp "${BUILD}/mk64-3ds-game-v${VERSION}.3dsx" "${BUILD}/mk64-3ds-v${VERSION}.3dsx"
+
+if [[ ! -x "${MAKEROM}" ]]; then
+  if [[ "${MK64_3DS_REQUIRE_CIA:-0}" == 1 ]]; then
+    printf 'CIA required but makerom is unavailable.\n' >&2
+    exit 1
+  fi
+  printf 'Full-game 3DSX ready; makerom is unavailable for CIA packaging.\n'
+  python3 "${ROOT}/platform/3ds/package_hashes.py" "${BUILD}"
+  exit 0
+fi
+
+if [[ -n "${MK64_3DS_BANNER_CGFX:-}" ]]; then
+  if [[ ! -x "${BANNERTOOL}" ]]; then
+    printf 'A custom CGFX banner requires bannertool.\n' >&2
+    exit 1
+  fi
+  "${BANNERTOOL}" makebanner -ci "${MK64_3DS_BANNER_CGFX}" \
+    -a "${MK64_3DS_BANNER_AUDIO:-${ROOT}/platform/3ds/assets/banner.wav}" \
+    -o "${BUILD}/mk64-3ds.bnr"
+else
+  # Hardware-approved front-facing logo + animated flag. No flat fallback.
+  cp "${ROOT}/platform/3ds/assets/banner/banner.bnr" "${BUILD}/mk64-3ds.bnr"
+fi
+
+(
+  cd "${ROOT}"
+  "${MAKEROM}" -f cia -o "${BUILD}/mk64-3ds-v${VERSION}.cia" \
+    -DAPP_ROMFS="${BUILD}/romfs" \
+    -rsf "${ROOT}/platform/3ds/cia/mk64-3ds.rsf" -target t -exefslogo \
+    -elf "${BUILD}/mk64-3ds-game.elf" -icon "${BUILD}/mk64-3ds.smdh" \
+    -banner "${BUILD}/mk64-3ds.bnr"
+)
+
+python3 "${ROOT}/platform/3ds/package_hashes.py" "${BUILD}" --require-cia
+printf 'Ready:\n  %s\n  %s\n' \
+  "${BUILD}/mk64-3ds-v${VERSION}.3dsx" "${BUILD}/mk64-3ds-v${VERSION}.cia"
