@@ -24,19 +24,11 @@ game version, relevant settings and the steps needed to reproduce it.
 
 ## ⬇️ Download and Installation
 
-This project is being prepared as an independent repository; its new publication
-URL has not been assigned yet. The preceding fork is
-[Epic0522/mario-kart-64-3ds](https://github.com/Epic0522/mario-kart-64-3ds), not a
-claim that the Complete source has already been published there. Use **this
-project's** CIA or full-game 3DSX, not an upstream package. There is no built-in updater.
-
 1. Install the CIA with FBI, or launch the 3DSX with Homebrew Launcher.
 2. Place a big-endian USA ROM at `sd:/3ds/MK64/mk64.z64`.
 3. First launch validates and extracts `mk64.o2r`. Keep the console charged; START cancels extraction safely.
 
 Later launches reuse the archive; an existing compatible SpaghettiKart O2R can also be used. Upgrades replace only the application: retain `sd:/3ds/MK64/` to preserve saves, ghosts and settings.
-
-**Complete** is the public project name only. HOME metadata stays **MK64 3DS Port** / **Mario Kart 64** / **Epic&EstebanPdN**; package filenames, the title ID, approved banner and save location are unchanged.
 
 ## ⚙️ Features
 
@@ -51,11 +43,18 @@ Later launches reuse the archive; an existing compatible SpaghettiKart O2R can a
 - **Timing and presentation** — an independent race clock, synchronized transitions and a selectable 30 FPS frame limiter.
 - **Animated 3D HOME banner** — a front-facing logo and waving flag, without HOME's default continuous rotation.
 
-Modern logic is optional; disabling it restores original gameplay rules, **not** the original crashes or UI bugs. See the [change overview](FIXES.md) and [changelog](CHANGELOG.md) for scope and history.
+Modern logic can be toggled under Gameplay. Rendering, audio and UI fixes remain
+active with it disabled. See [FIXES.md](FIXES.md) and [CHANGELOG.md](CHANGELOG.md)
+for the full change overview.
 
-Select VS or Battle under **1P GAME**. VS uses an eight-driver grid and race rankings, with GP-style finish voices and result music. Battle retains the original arenas, three balloons, item table and last-survivor victory rule; bots use floor-supported, wall-tested routes, prioritize real item boxes when empty-handed and reposition after prolonged close combat. After your one-use bomb is spent, follow surviving bots until the match ends; pause and quit remain available. Arena navigation and basic bot inventory remain available with modern logic disabled, since the original game has no Battle CPU opponents.
+Select VS or Battle under **1P GAME**. VS races against seven CPUs. Battle uses
+the original arenas and three-balloon rules against three bots; the last survivor
+wins. After elimination, use your one-use bomb, then spectate the remaining bots.
+Pause and quit remain available. Battle bots work with modern logic disabled too.
 
-The simulation runs at 30 Hz. Adaptive presentation can reach 60 Hz when workload permits; the limiter disables midpoint presentation. Sustained 60 FPS is not guaranteed. Local multiplayer is not available; solo VS/Battle opponents are computer-controlled.
+The frame limiter caps presentation at 30 FPS. With it off, rendering can reach
+60 FPS when workload permits. Performance varies by console and course.
+Local multiplayer is not available.
 
 ## 🎮 Controls and Configuration
 
@@ -73,7 +72,15 @@ The simulation runs at 30 Hz. Adaptive presentation can reach 60 Hz when workloa
 | ZL | Toggle configured Turbo Speed on/off |
 | Touch | Lower-screen menus and settings |
 
-L on Game Select opens options. Title options contain **Display**, **Gameplay** and **Developer**; pause also keeps the **Pause** page with centered continue/quit actions. HUD meters are settings, not Y. Turbo Speed fast-forwards game logic globally, including AUTO and menu/ceremony sequences; it is not a kart-speed upgrade. Hold C-Stick during a race or press ZL to toggle. Pause and captured menus suppress acceleration; setting X1 clears the session-only toggle. Manual race entry/retry resets Turbo; a continuous AUTO session retains its toggle across courses and retries. A fresh game launch starts with Turbo off.
+Press L on Game Select to open **Display**, **Gameplay** and **Developer** settings.
+The in-race menu also has a **Pause** page for continue/quit. HUD layout,
+speedometer and other meters are configured under Display.
+
+**Turbo Speed** fast-forwards the game, including AUTO, menus and ceremonies;
+it does not upgrade your kart. Hold C-Stick to fast-forward, or press ZL to toggle
+it. Manual race
+entry/retry resets Turbo; AUTO retains it across courses and retries. A fresh
+game launch starts with Turbo off.
 
 | Fresh setting | Default |
 | --- | --- |
@@ -84,7 +91,9 @@ L on Game Select opens options. Title options contain **Display**, **Gameplay** 
 | ZR debug | Off |
 | Logging | Off |
 
-Saved settings take precedence. Unsupported HUD meter combinations appear red. Time Trials hide rank; title demos hide the upper HUD. After finishing, the upper HUD retains only the enlarged, flashing place indicator until native results-window conversion begins; lower HUD contents remain visible. Item windows use native pickup/slide motion rather than a permanent empty frame. Lower-screen race entry uses expanding letterbox shutters, and exit fades with the upper results windows. Modern logic changes take effect next race.
+Saved settings take precedence. Unsupported HUD meter combinations appear red.
+Time Trials hide rank; title demos hide the upper HUD. Modern logic changes take
+effect next race.
 
 ## 🎲 Random Cups and AUTO
 
@@ -96,31 +105,32 @@ Saved settings take precedence. Unsupported HUD meter combinations appear red. T
 
 Time Trial Map Select has no random cup button. Extra is the mirrored course mode. The award ceremony can be skipped with A or START.
 
-AUTO is available in GP, VS and Battle. It hands all eight racing karts, or all four Battle karts, to the CPU. The selected driver owns the result and receives principal-rival-level pacing in races; changing the observed driver does not change that selection. Modern item/pace rules also apply in AUTO when enabled. Gameplay view is the default; Battle offers only near/far gameplay-follow views, not cinematics. Battle standings follow balloon counts with stable ties and eliminated drivers last. Solo Battle draws three distinct random opponents from the seven unselected characters.
+AUTO is available in GP, VS and Battle. The CPU controls every kart, and the
+selected driver owns the result even when you switch the camera to another
+driver. Modern logic also applies in AUTO when enabled. Gameplay view is the
+default. Battle rankings follow balloon counts, with eliminated drivers last.
 
-Circle Pad / D-pad left or right changes the observed driver. A/B/X/Y switches between gameplay view with HUD and cinematic view without HUD in GP/VS, or near/far gameplay view in Battle. Driving/item inputs are locked; pause, continue, retry and quit remain available. Finish voices refer to the selected driver, not the camera target.
+Circle Pad / D-pad left or right changes the observed driver. A/B/X/Y switches
+between gameplay and cinematic views in GP/VS, or near/far gameplay views in
+Battle. Driving and item inputs are disabled; pause, continue, retry and quit
+remain available.
 
-AUTO confirms ready result/retry menus every 0.5 seconds of real time, including GP score-counting fast-forward. It selects Retry after a poor GP finish; VS/Battle use the currently selected native result action. Pause, fades and unfinished menu entry suppress confirmation. The ending plays the original fourth-place no-trophy/bomb-car scene for the selected driver, then returns automatically after its normal presentation. Actual race points are unchanged. AUTO does not record awards or unlock progress in the save; ordinary manual awards still work.
+GP AUTO advances through results and retries automatically. VS/Battle confirms
+the selected result action. GP AUTO ends with the original fourth-place no-trophy
+ceremony. AUTO does not save awards or unlock progress.
 
 ## 🛠️ Diagnostics
 
-Developer → Memory dump exports performance samples, settings and resource data under `sd:/3ds/MK64/dump/`. Dump time is excluded from FPS measurements. Clean dumps removes diagnostic files, not ROM/O2R/saves/settings. Developer → ZR debug is off by default; holding ZR when enabled advances through checkpoints to finish a race.
+The **Developer** page includes:
 
-Developer → **Logging** defaults to **OFF**, including existing configurations.
-When enabled, it records startup, runtime, installer and fault logs. The saved
-switch takes effect immediately; disabling stops the startup writer and closes
-the runtime log. Input, FPS/overlay displays and explicit Memory dump still work
-with logging off. A manual dump then contains current snapshots/performance data,
-not an old runtime log. Normal save/settings/cache writes are not disabled.
-
-Starter sprites use a corrected quad diagonal while preserving the original art,
-UVs and shadows; this repair is independent of Modern Logic. Temporary countdown
-capture controls and SD writers have been removed. Developer retains Memory dump,
-FPS, overlay, dump cleanup, ZR debug and Logging. Existing captures remain untouched;
-local inspection tools and validation records document the investigation;
-these maintenance files are not included in the public source snapshot.
-
-CIA allocation limits are 80 MiB on Old models and 124 MiB on New models; these are not measured memory peaks. The maintainer accepted E16 after iterative console testing, including the final minimap/AUTO polish. Earlier feedback confirmed four-cup completion and an improved Old 3DS cache regression. This is not a quantified latest-FPS or exhaustive all-model/all-course/long-session claim. Host tests, package verification and console testing remain separate.
+- **Memory dump** — export performance samples, settings and resource data to
+  `sd:/3ds/MK64/dump/` for bug reports.
+- **Logging** — record startup, runtime, installer and fault logs. Off by default;
+  manual dumps and FPS displays still work with logging off.
+- **Clean dumps** — remove diagnostic files without touching ROMs, O2R archives,
+  saves or settings.
+- **ZR debug** — hold ZR to advance through checkpoints and finish a race.
+  Off by default.
 
 ## 🏗️ Building
 
@@ -131,36 +141,22 @@ git submodule update --init --recursive --depth 1
 ./platform/3ds/build.sh
 ```
 
-The first configuration downloads additional pinned build dependencies, so an
-internet connection is required unless they are already cached. No other local
-project directory or private test files are needed. Compiling does not require
-a game ROM; the console needs the ROM or a compatible O2R archive to play.
+The first configuration downloads pinned build dependencies, so an internet
+connection is required unless they are already cached. A ROM is not needed to
+compile; the console needs a ROM or compatible O2R archive to play.
 
-See [BUILDING.md](BUILDING.md) for dependencies and package verification, the [code map](platform/3ds/docs/ARCHITECTURE.md) for module boundaries, and [RELEASING.md](RELEASING.md) for independent publication checks.
+See [BUILDING.md](BUILDING.md) for setup and build instructions,
+[ARCHITECTURE.md](platform/3ds/docs/ARCHITECTURE.md) for the code map, and
+[RELEASING.md](RELEASING.md) for packaging instructions.
 
-## 📁 Consolidated Workspace
-
-The three former local project directories are consolidated under
-**MarioKart64-3DSPort-Complete**. This root is the only maintained, playable
-game and release entry point; its approved E16 packages remain unchanged.
+## 📁 Project Structure
 
 | Location | Purpose |
 | --- | --- |
 | `platform/3ds/` | Maintained runtime, adaptations, artwork and packaging helpers |
 | `third_party/SpaghettiKart/` | Pinned production game/engine dependencies |
-| `build-3ds/game/` | Latest approved CIA, full-game 3DSX and hash manifest; local/ignored |
-| `build-host/retained/` | Compressed diagnostics, package metadata and verification logs; local/ignored |
-
-Local-only experiments, regression suites, preview tools and historical
-validation records are ignored by Git and excluded from the public snapshot.
-They remain on the maintainer's disk; normal game builds do not require them.
-Fresh public clones do not need private archives or logs. The workspace is now
-a standalone Git repository, not a linked worktree. Earlier local worktrees,
-uncommitted changes and their complete shared histories were verified and
-archived outside the project before starting a new source history. Production
-dependencies retain their exact upstream commit IDs and source notices; their
-local checkouts use self-contained shallow Git stores with no old-workspace
-alternates. No remote publication is implied by this local migration.
+| `build-3ds/game/` | Generated CIA, full-game 3DSX and hash manifest |
+| `docs/images/` | README artwork |
 
 ## 🫡 Credits
 
@@ -171,4 +167,5 @@ alternates. No remote publication is implied by this local migration.
 - **SM64 3DS Port Ultimate** — techniques studied from the [related project](https://github.com/Epic0522/Super-Mario-64-3ds-port---Ultimate).
 - **Codex** — assisted implementation and verification.
 
-Source origins and third-party notices are retained. Independent publication does not erase ancestry or replace existing license terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for source origins and
+third-party license notices.
