@@ -5,9 +5,22 @@
   <img src="https://img.shields.io/badge/output-.3dsx%20%7C%20.cia-6f42c1?style=for-the-badge" alt="3DSX and CIA">
 </p>
 
-A native Mario Kart 64 port for the Nintendo 3DS family, maintained by Epic. This project continues EstebanPdN's 3DS port, based on SpaghettiKart, with resource-management fixes, rendering corrections and optional gameplay improvements.
+![Mario Kart 64 3DS Port Complete](docs/images/mk64-3ds-complete.png)
+
+A native Mario Kart 64 port for the Nintendo 3DS family, maintained by Epic.
+This project continues [EstebanPdN's original Mario Kart 64 3DS port](https://github.com/EstebanPdN/mario-kart-64-3ds),
+based on SpaghettiKart, with resource-management fixes, rendering corrections
+and optional gameplay improvements.
+
+[Original project](https://github.com/EstebanPdN/mario-kart-64-3ds) · [Discord community](https://discord.gg/qwcTTDqbhu)
 
 This is an unofficial fan project, not affiliated with Nintendo or Harbour Masters. No ROM, O2R archive, save or extracted gameplay resources are included. A compatible USA ROM is required.
+
+## 💬 Community
+
+Join [Epic's Discord community](https://discord.gg/qwcTTDqbhu) to discuss the
+port and share feedback. When reporting an issue, include your console model,
+game version, relevant settings and the steps needed to reproduce it.
 
 ## ⬇️ Download and Installation
 
@@ -117,6 +130,11 @@ Initialize pinned submodules recursively, then build:
 git submodule update --init --recursive --depth 1
 ./platform/3ds/build.sh
 ```
+
+The first configuration downloads additional pinned build dependencies, so an
+internet connection is required unless they are already cached. No other local
+project directory or private test files are needed. Compiling does not require
+a game ROM; the console needs the ROM or a compatible O2R archive to play.
 
 See [BUILDING.md](BUILDING.md) for dependencies and package verification, the [code map](platform/3ds/docs/ARCHITECTURE.md) for module boundaries, and [RELEASING.md](RELEASING.md) for independent publication checks.
 
